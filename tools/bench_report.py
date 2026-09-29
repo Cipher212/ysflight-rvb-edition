@@ -124,7 +124,11 @@ def main():
     section_cols = ["sim_ms", "sync_ms", "camera_ms", "fetch_ms", "vfx_ms", "hud_ms"]
     if has_audio:
         section_cols.append("audio_ms")
-    
+    # C++ trails + tracers (2026-09-29): before that, this work was GDScript and counted in vfx_ms
+    if "fx_cpp_ms" in col_idx:
+        sections.insert(sections.index("gpu_ms"), "fx_cpp_ms")
+        section_cols.append("fx_cpp_ms")
+
     section_data = {s: [] for s in sections}
     for r in valid_rows:
         for s in sections:

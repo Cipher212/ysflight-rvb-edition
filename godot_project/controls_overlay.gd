@@ -24,8 +24,18 @@ func setup(p_main: Node, p_controls: Node) -> void:
 	main = p_main
 	controls = p_controls
 
+var _drew_last_frame := false
+
+# Redraw only while something is shown (plus one frame to clear it)
 func _process(_delta: float) -> void:
-	queue_redraw()
+	var shown: bool = controls != null and main != null and (_stick_indicator_shown() or bool(controls.get_value("show_input_overlay", false)))
+	if shown or _drew_last_frame:
+		queue_redraw()
+	_drew_last_frame = shown
+
+func _stick_indicator_shown() -> bool:
+	return bool(controls.get_value("show_stick_indicator", true)) and not bool(main.get("ai_player_mode")) \
+		and controls.get_active_stick_device_name() == "Mouse" and main.camera_rig.mode == 1
 
 func _draw() -> void:
 	if controls == null or main == null:
@@ -34,29 +44,26 @@ func _draw() -> void:
 	var vp_rect := get_viewport_rect()
 
 	# --- 1. Mouse Stick Indicator ---
-	if bool(controls.get_value("show_stick_indicator", true)) and not bool(main.get("ai_player_mode")):
-		var active_device: String = controls.get_active_stick_device_name()
-		var cam_mode: int = int(main.get("cam_mode"))
-		if active_device == "Mouse" and cam_mode == 1: # cockpit only (it sat on top of the jet in F2)
-			var centre: Vector2 = vp_rect.size * 0.5
-			var scale_factor: float = max(0.45 * vp_rect.size.y, 1.0)
-			var mpos: Vector2 = get_viewport().get_mouse_position()
-			var diff: Vector2 = mpos - centre
+	if _stick_indicator_shown(): # cockpit only (it sat on top of the jet in F2)
+		var centre: Vector2 = vp_rect.size * 0.5
+		var scale_factor: float = max(0.45 * vp_rect.size.y, 1.0)
+		var mpos: Vector2 = get_viewport().get_mouse_position()
+		var diff: Vector2 = mpos - centre
 
-			var clamped_x: float = clamp(diff.x, -scale_factor, scale_factor)
-			var clamped_y: float = clamp(diff.y, -scale_factor, scale_factor)
-			var stick_pos: Vector2 = centre + Vector2(clamped_x, clamped_y)
+		var clamped_x: float = clamp(diff.x, -scale_factor, scale_factor)
+		var clamped_y: float = clamp(diff.y, -scale_factor, scale_factor)
+		var stick_pos: Vector2 = centre + Vector2(clamped_x, clamped_y)
 
-			# Neutral center circle
-			draw_arc(centre, 6.0, 0.0, TAU, 32, HUD_GREEN, 1.5, true)
+		# Neutral center circle
+		draw_arc(centre, 6.0, 0.0, TAU, 32, HUD_GREEN, 1.5, true)
 
-			# Subtle line from neutral to stick position
-			draw_line(centre, stick_pos, HUD_FAINT_GREEN, 1.0, true)
+		# Subtle line from neutral to stick position
+		draw_line(centre, stick_pos, HUD_FAINT_GREEN, 1.0, true)
 
-			# Stick deflection crosshair (+)
-			var cross_len: float = 6.0
-			draw_line(stick_pos + Vector2(-cross_len, 0.0), stick_pos + Vector2(cross_len, 0.0), HUD_GREEN, 1.5, true)
-			draw_line(stick_pos + Vector2(0.0, -cross_len), stick_pos + Vector2(0.0, cross_len), HUD_GREEN, 1.5, true)
+		# Stick deflection crosshair (+)
+		var cross_len: float = 6.0
+		draw_line(stick_pos + Vector2(-cross_len, 0.0), stick_pos + Vector2(cross_len, 0.0), HUD_GREEN, 1.5, true)
+		draw_line(stick_pos + Vector2(0.0, -cross_len), stick_pos + Vector2(0.0, cross_len), HUD_GREEN, 1.5, true)
 
 	# --- 2. Input Overlay ---
 	if bool(controls.get_value("show_input_overlay", false)):

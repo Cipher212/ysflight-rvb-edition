@@ -55,7 +55,7 @@ func setup(m: Node) -> void:
 	start_tick = Engine.get_physics_frames()
 	main.ysflight_sim.get_frame_stats() # Reset accumulators
 	
-	csv_lines.append("frame,sim_time,wall_ms,ticks,sim_ms,sync_ms,camera_ms,fetch_ms,vfx_ms,hud_ms,gpu_ms,render_cpu_ms,draw_calls,primitives,objects,nodes,alive_air,weapons,explosions,visual_entities,cam_mode,flag,audio_ms,motion_err")
+	csv_lines.append("frame,sim_time,wall_ms,ticks,sim_ms,sync_ms,camera_ms,fetch_ms,vfx_ms,hud_ms,gpu_ms,render_cpu_ms,draw_calls,primitives,objects,nodes,alive_air,weapons,explosions,visual_entities,cam_mode,flag,audio_ms,motion_err,fx_cpp_ms")
 
 # Keeps the render resolution fixed for the whole run (maximising the window would change the GPU load).
 func _enforce_window_size() -> void:
@@ -93,22 +93,22 @@ func record_frame(camera_us: float, fetch_us: float, vfx_us: float, hud_us: floa
 	
 	var target_cam: int = 0
 	if sim_time < 20.0:
-		target_cam = main.CamMode.HORIZON_CHASE
+		target_cam = main.camera_rig.CamMode.HORIZON_CHASE
 	elif sim_time < 35.0:
-		target_cam = main.CamMode.COCKPIT
+		target_cam = main.camera_rig.CamMode.COCKPIT
 	elif sim_time < 60.0:
-		target_cam = main.CamMode.SPECTATOR_AI
+		target_cam = main.camera_rig.CamMode.SPECTATOR_AI
 	elif sim_time < 75.0:
-		target_cam = main.CamMode.TOWER
+		target_cam = main.camera_rig.CamMode.TOWER
 	elif sim_time < 90.0:
-		target_cam = main.CamMode.FLY_BY
+		target_cam = main.camera_rig.CamMode.FLY_BY
 	elif sim_time < 105.0:
-		target_cam = main.CamMode.SPECTATOR_AI
+		target_cam = main.camera_rig.CamMode.SPECTATOR_AI
 	else:
-		target_cam = main.CamMode.HORIZON_CHASE
+		target_cam = main.camera_rig.CamMode.HORIZON_CHASE
 	
 	if target_cam != last_cam_mode:
-		main._set_camera_mode(target_cam, false)
+		main.camera_rig.set_mode(target_cam)
 		last_cam_mode = target_cam
 
 	var now_usec := Time.get_ticks_usec()
@@ -128,6 +128,7 @@ func record_frame(camera_us: float, fetch_us: float, vfx_us: float, hud_us: floa
 	var weapons: float = stats[4]
 	var explosions: float = stats[5]
 	var visual_entities: float = stats[6]
+	var fx_cpp_ms: float = stats[7] if stats.size() > 7 else 0.0
 	
 	var rid: RID = main.get_viewport().get_viewport_rid()
 	var gpu_ms: float = RenderingServer.viewport_get_measured_render_time_gpu(rid)
@@ -142,7 +143,7 @@ func record_frame(camera_us: float, fetch_us: float, vfx_us: float, hud_us: floa
 	if sim_time < 2.0:
 		flag = 2
 		
-	var cam_mode: int = main.cam_mode
+	var cam_mode: int = main.camera_rig.mode
 	
 	var current_sec := int(sim_time)
 	var take_periodic: bool = false
@@ -172,8 +173,8 @@ func record_frame(camera_us: float, fetch_us: float, vfx_us: float, hud_us: floa
 			flag = 1
 
 	var motion_err: float = _motion_error()
-	var line := "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f" % [
-		float(frame_count), sim_time, wall_ms, ticks, sim_ms, sync_ms, camera_us/1000.0, fetch_us/1000.0, vfx_us/1000.0, hud_us/1000.0, gpu_ms, render_cpu_ms, draw_calls, primitives, objects, nodes, alive_air, weapons, explosions, visual_entities, float(cam_mode), float(flag), audio_us/1000.0, motion_err
+	var line := "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%.3f" % [
+		float(frame_count), sim_time, wall_ms, ticks, sim_ms, sync_ms, camera_us/1000.0, fetch_us/1000.0, vfx_us/1000.0, hud_us/1000.0, gpu_ms, render_cpu_ms, draw_calls, primitives, objects, nodes, alive_air, weapons, explosions, visual_entities, float(cam_mode), float(flag), audio_us/1000.0, motion_err, fx_cpp_ms
 	]
 	csv_lines.append(line)
 	frame_count += 1

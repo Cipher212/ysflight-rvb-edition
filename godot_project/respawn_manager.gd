@@ -70,9 +70,7 @@ func respawn() -> bool:
 		return false
 	if bool(main.get("ai_player_mode")):
 		sim.enable_player_autopilot()
-	# Camera modes that keep state from the previous aircraft start fresh
-	main.set("locked_basis_initialized", false)
-	main.set("flyby_initialized", false)
+	main.camera_rig.reset_for_new_aircraft()
 	return true
 
 func _pick_start_position(iff: int) -> String:

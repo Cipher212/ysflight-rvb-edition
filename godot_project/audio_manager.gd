@@ -20,7 +20,7 @@ const OVER_G_LIMIT: float = 11.0
 # Distance falloff (Godot inverse-distance model: full volume, capped at +3 dB, out to UNIT_SIZE, then
 # -6 dB per doubling of distance). Jets are very loud: engines stay at full volume for the first ~250 m
 # and carry for kilometres in exterior views. In the cockpit, other aircraft are pushed down on the
-# "Others" bus instead (helmet + your own engine), see INTERIOR_OTHERS_DB.
+# "Others" bus instead (helmet + your own engine), see INTERIOR_OTHERS_DB in audio/audio_buses.gd.
 const ENGINE_UNIT_SIZE: float = 250.0
 const ENGINE_MAX_DISTANCE: float = 8000.0
 const GUN_UNIT_SIZE: float = 120.0
@@ -30,8 +30,6 @@ const LAUNCH_MAX_DISTANCE: float = 3000.0
 const EXPLOSION_UNIT_SIZE: float = 300.0
 const EXPLOSION_MAX_DISTANCE: float = 2500.0 # user rule: instant up to ~2.5 km, silent beyond
 const PLAYER_EVENT_UNIT_SIZE: float = 40.0
-const INTERIOR_OTHERS_DB: float = -32.0
-const INTERIOR_EFFECTS_DB: float = -12.0
 
 # Engine spool lag. YS lets throttle jump 100% -> 0% instantly; the sound follows with turbine-like
 # inertia instead (exponential, time constant in seconds): winding down is audible for about a second.
@@ -40,46 +38,12 @@ const ENGINE_SPOOL_DOWN_TAU: float = 0.4
 const BURNER_FADE_IN_TIME: float = 0.15
 const BURNER_FADE_OUT_TIME: float = 0.5
 
-# Sound streams loaded at startup
-var _stream_engine0: AudioStreamWAV = null
-var _stream_burner: AudioStreamWAV = null
-var _stream_prop0: AudioStreamWAV = null
-var _stream_gun: AudioStreamWAV = null
-var _stream_warning: AudioStreamWAV = null
-var _stream_stallhorn: AudioStreamWAV = null
-var _stream_gearhorn: AudioStreamWAV = null
-var _stream_missile: AudioStreamWAV = null
-var _stream_rocket: AudioStreamWAV = null
-var _stream_bombsaway: AudioStreamWAV = null
-var _stream_bang: AudioStreamWAV = null
-var _stream_blast: AudioStreamWAV = null
-var _stream_blast2: AudioStreamWAV = null
-var _stream_touchdwn: AudioStreamWAV = null
-var _stream_retractldg: AudioStreamWAV = null
-var _stream_extendldg: AudioStreamWAV = null
-var _stream_damage: AudioStreamWAV = null
-var _stream_hit: AudioStreamWAV = null
+const SoundLibrary := preload("res://audio/sound_library.gd")
+const AudioBuses := preload("res://audio/audio_buses.gd")
 
-# Synthesized streams
-var _stream_lock_beep: AudioStreamWAV = null
-var _stream_over_g: AudioStreamWAV = null
-
-# Simulation reference
+var _sounds: SoundLibrary = null
+var _buses: AudioBuses = null
 var _sim: Object = null
-
-# Bus indices and effect indices
-var _player_bus_idx: int = -1
-var _others_bus_idx: int = -1
-var _effects_bus_idx: int = -1
-var _cockpit_bus_idx: int = -1
-
-var _player_lpf_idx: int = -1
-var _others_lpf_idx: int = -1
-var _effects_lpf_idx: int = -1
-
-var _cur_others_bus_db: float = 0.0
-var _cur_effects_bus_db: float = 0.0
-var _was_interior: bool = false
 
 # Engine voice structure
 class EngineVoice:
@@ -142,9 +106,8 @@ var _has_prev_cam: bool = false
 
 func setup(sim: Object) -> void:
 	_sim = sim
-	_setup_buses()
-	_load_all_sounds()
-	_synthesize_tones()
+	_buses = AudioBuses.new()
+	_sounds = SoundLibrary.new()
 	_setup_engine_voices()
 	_setup_gun_voices()
 	_setup_oneshots()
@@ -162,7 +125,7 @@ func update(delta: float, camera: Camera3D, interior: bool, telemetry: Dictionar
 		return
 
 	# Bus routing & filtering
-	_update_buses(delta, interior)
+	_buses.update(delta, interior)
 
 	# Fetch audio state EXACTLY ONCE per frame
 	var state: Dictionary = _sim.get_audio_state()
@@ -218,192 +181,6 @@ func update(delta: float, camera: Camera3D, interior: bool, telemetry: Dictionar
 	_update_cockpit_warnings(player_dict, telemetry, player_alive)
 
 # ------------------------------------------------------------------------------
-# Bus Management
-# ------------------------------------------------------------------------------
-func _setup_buses() -> void:
-	_player_bus_idx = _get_or_create_bus("PlayerEngine")
-	_others_bus_idx = _get_or_create_bus("Others")
-	_effects_bus_idx = _get_or_create_bus("Effects")
-	_cockpit_bus_idx = _get_or_create_bus("Cockpit")
-
-	_player_lpf_idx = _ensure_low_pass_filter(_player_bus_idx)
-	_others_lpf_idx = _ensure_low_pass_filter(_others_bus_idx)
-	_effects_lpf_idx = _ensure_low_pass_filter(_effects_bus_idx)
-
-	# Hard limiter on Master so many simultaneous explosions/launches never clip the output
-	var master_idx := AudioServer.get_bus_index("Master")
-	var has_limiter := false
-	for i in AudioServer.get_bus_effect_count(master_idx):
-		if AudioServer.get_bus_effect(master_idx, i) is AudioEffectHardLimiter:
-			has_limiter = true
-	if not has_limiter:
-		var limiter := AudioEffectHardLimiter.new()
-		limiter.ceiling_db = -1.0
-		AudioServer.add_bus_effect(master_idx, limiter)
-
-	# Initial exterior settings
-	AudioServer.set_bus_volume_db(_player_bus_idx, 0.0)
-	AudioServer.set_bus_volume_db(_others_bus_idx, 0.0)
-	AudioServer.set_bus_volume_db(_effects_bus_idx, 0.0)
-	AudioServer.set_bus_mute(_cockpit_bus_idx, true)
-
-	AudioServer.set_bus_effect_enabled(_player_bus_idx, _player_lpf_idx, false)
-	AudioServer.set_bus_effect_enabled(_others_bus_idx, _others_lpf_idx, false)
-	AudioServer.set_bus_effect_enabled(_effects_bus_idx, _effects_lpf_idx, false)
-
-	_cur_others_bus_db = 0.0
-	_cur_effects_bus_db = 0.0
-	_was_interior = false
-
-func _get_or_create_bus(bus_name: StringName) -> int:
-	var idx := AudioServer.get_bus_index(bus_name)
-	if idx == -1:
-		idx = AudioServer.bus_count
-		AudioServer.add_bus(idx)
-		AudioServer.set_bus_name(idx, bus_name)
-		AudioServer.set_bus_send(idx, "Master")
-	return idx
-
-func _ensure_low_pass_filter(bus_idx: int) -> int:
-	for i in range(AudioServer.get_bus_effect_count(bus_idx)):
-		if AudioServer.get_bus_effect(bus_idx, i) is AudioEffectLowPassFilter:
-			return i
-	var lpf := AudioEffectLowPassFilter.new()
-	lpf.cutoff_hz = 900.0
-	var effect_idx := AudioServer.get_bus_effect_count(bus_idx)
-	AudioServer.add_bus_effect(bus_idx, lpf, effect_idx)
-	AudioServer.set_bus_effect_enabled(bus_idx, effect_idx, false)
-	return effect_idx
-
-func _update_buses(delta: float, interior: bool) -> void:
-	var target_others_db := INTERIOR_OTHERS_DB if interior else 0.0
-	var target_effects_db := INTERIOR_EFFECTS_DB if interior else 0.0
-
-	_cur_others_bus_db = move_toward(_cur_others_bus_db, target_others_db, delta * 70.0)
-	AudioServer.set_bus_volume_db(_others_bus_idx, _cur_others_bus_db)
-
-	_cur_effects_bus_db = move_toward(_cur_effects_bus_db, target_effects_db, delta * 20.0)
-	AudioServer.set_bus_volume_db(_effects_bus_idx, _cur_effects_bus_db)
-
-	AudioServer.set_bus_mute(_cockpit_bus_idx, not interior)
-
-	if interior != _was_interior:
-		_was_interior = interior
-		AudioServer.set_bus_effect_enabled(_player_bus_idx, _player_lpf_idx, interior)
-		AudioServer.set_bus_effect_enabled(_others_bus_idx, _others_lpf_idx, interior)
-		AudioServer.set_bus_effect_enabled(_effects_bus_idx, _effects_lpf_idx, interior)
-
-# ------------------------------------------------------------------------------
-# Sound Loading & Synthesis
-# ------------------------------------------------------------------------------
-func _load_sound(filename: String, is_loop: bool = false) -> AudioStreamWAV:
-	var global_path := ProjectSettings.globalize_path("res://sound/" + filename)
-	var stream: AudioStreamWAV = null
-	stream = AudioStreamWAV.load_from_file(global_path)
-	if stream == null:
-		var res_path := "res://sound/" + filename
-		if ResourceLoader.exists(res_path):
-			stream = load(res_path) as AudioStreamWAV
-	if stream != null and is_loop:
-		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-		stream.loop_begin = 0
-		stream.loop_end = int(stream.get_length() * stream.mix_rate)
-	return stream
-
-func _load_all_sounds() -> void:
-	_stream_engine0 = _load_sound("engine0.wav", true)
-	_stream_burner = _load_sound("burner.wav", true)
-	_stream_prop0 = _load_sound("prop0.wav", true)
-	_stream_gun = _load_sound("gun.wav", true)
-	_stream_warning = _load_sound("warning.wav", true)
-	_stream_stallhorn = _load_sound("stallhorn.wav", true)
-	_stream_gearhorn = _load_sound("gearhorn.wav", true)
-
-	_stream_missile = _load_sound("missile.wav", false)
-	_stream_rocket = _load_sound("rocket.wav", false)
-	_stream_bombsaway = _load_sound("bombsaway.wav", false)
-	_stream_bang = _load_sound("bang.wav", false)
-	_stream_blast = _load_sound("blast.wav", false)
-	_stream_blast2 = _load_sound("blast2.wav", false)
-	_stream_touchdwn = _load_sound("touchdwn.wav", false)
-	_stream_retractldg = _load_sound("retractldg.wav", false)
-	_stream_extendldg = _load_sound("extendldg.wav", false)
-	_stream_damage = _load_sound("damage.wav", false)
-	_stream_hit = _load_sound("hit.wav", false)
-
-func _synthesize_tones() -> void:
-	var rate := 44100
-	var amp := 32767.0 * 0.35
-
-	# 1. Lock-on beep: 1000 Hz sine, 90 ms on / 90 ms off, -10 dB, 5 ms fade
-	var lock_on_samples := int(round(0.090 * rate))
-	var lock_off_samples := int(round(0.090 * rate))
-	var lock_total_samples := lock_on_samples + lock_off_samples
-	var lock_fade_samples := int(round(0.005 * rate))
-	var lock_bytes := PackedByteArray()
-	lock_bytes.resize(lock_total_samples * 2)
-
-	for i in range(lock_on_samples):
-		var env := 1.0
-		if i < lock_fade_samples:
-			env = float(i) / float(lock_fade_samples)
-		elif i >= lock_on_samples - lock_fade_samples:
-			env = float(lock_on_samples - 1 - i) / float(lock_fade_samples)
-		var t := float(i) / float(rate)
-		var val := int(clamp(sin(TAU * 1000.0 * t) * env * amp, -32768.0, 32767.0))
-		lock_bytes.encode_s16(i * 2, val)
-	for i in range(lock_on_samples, lock_total_samples):
-		lock_bytes.encode_s16(i * 2, 0)
-
-	_stream_lock_beep = AudioStreamWAV.new()
-	_stream_lock_beep.format = AudioStreamWAV.FORMAT_16_BITS
-	_stream_lock_beep.stereo = false
-	_stream_lock_beep.mix_rate = rate
-	_stream_lock_beep.data = lock_bytes
-	_stream_lock_beep.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	_stream_lock_beep.loop_begin = 0
-	_stream_lock_beep.loop_end = lock_total_samples
-
-	# 2. Over-G warning: two-tone 1600 Hz / 1250 Hz alternating, 50 ms on / 50 ms off each
-	var g_seg_samples := int(round(0.050 * rate))
-	var g_total_samples := g_seg_samples * 4
-	var g_fade_samples := int(round(0.005 * rate))
-	var g_bytes := PackedByteArray()
-	g_bytes.resize(g_total_samples * 2)
-
-	for phase in range(4):
-		var freq := 0.0
-		if phase == 0:
-			freq = 1600.0
-		elif phase == 2:
-			freq = 1250.0
-
-		var base_idx := phase * g_seg_samples
-		if freq == 0.0:
-			for k in range(g_seg_samples):
-				g_bytes.encode_s16((base_idx + k) * 2, 0)
-		else:
-			for k in range(g_seg_samples):
-				var env := 1.0
-				if k < g_fade_samples:
-					env = float(k) / float(g_fade_samples)
-				elif k >= g_seg_samples - g_fade_samples:
-					env = float(g_seg_samples - 1 - k) / float(g_fade_samples)
-				var t := float(k) / float(rate)
-				var wave := 0.85 * sin(TAU * freq * t) + 0.15 * sin(TAU * 3.0 * freq * t)
-				var val := int(clamp(wave * env * amp, -32768.0, 32767.0))
-				g_bytes.encode_s16((base_idx + k) * 2, val)
-
-	_stream_over_g = AudioStreamWAV.new()
-	_stream_over_g.format = AudioStreamWAV.FORMAT_16_BITS
-	_stream_over_g.stereo = false
-	_stream_over_g.mix_rate = rate
-	_stream_over_g.data = g_bytes
-	_stream_over_g.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	_stream_over_g.loop_begin = 0
-	_stream_over_g.loop_end = g_total_samples
-
-# ------------------------------------------------------------------------------
 # Voice Creation
 # ------------------------------------------------------------------------------
 func _create_engine_voice(bus_name: StringName, is_player: bool) -> EngineVoice:
@@ -416,7 +193,7 @@ func _create_engine_voice(bus_name: StringName, is_player: bool) -> EngineVoice:
 	v.engine_player.unit_size = ENGINE_UNIT_SIZE
 	v.engine_player.max_distance = ENGINE_MAX_DISTANCE
 	v.engine_player.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
-	v.engine_player.stream = _stream_engine0
+	v.engine_player.stream = _sounds.engine0
 	add_child(v.engine_player)
 
 	v.burner_player = AudioStreamPlayer3D.new()
@@ -425,7 +202,7 @@ func _create_engine_voice(bus_name: StringName, is_player: bool) -> EngineVoice:
 	v.burner_player.unit_size = ENGINE_UNIT_SIZE
 	v.burner_player.max_distance = ENGINE_MAX_DISTANCE
 	v.burner_player.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
-	v.burner_player.stream = _stream_burner
+	v.burner_player.stream = _sounds.burner
 	add_child(v.burner_player)
 
 	return v
@@ -448,7 +225,7 @@ func _setup_gun_voices() -> void:
 		gv.player.unit_size = GUN_UNIT_SIZE
 		gv.player.max_distance = GUN_MAX_DISTANCE
 		gv.player.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
-		gv.player.stream = _stream_gun
+		gv.player.stream = _sounds.gun
 		add_child(gv.player)
 		_gun_voices.append(gv)
 
@@ -478,14 +255,14 @@ func _setup_cockpit_players() -> void:
 	_lock_beep_player.name = "LockBeepPlayer"
 	_lock_beep_player.bus = "Cockpit"
 	_lock_beep_player.volume_db = -10.0
-	_lock_beep_player.stream = _stream_lock_beep
+	_lock_beep_player.stream = _sounds.lock_beep
 	add_child(_lock_beep_player)
 
 	_over_g_player = AudioStreamPlayer.new()
 	_over_g_player.name = "OverGPlayer"
 	_over_g_player.bus = "Cockpit"
 	_over_g_player.volume_db = -8.0
-	_over_g_player.stream = _stream_over_g
+	_over_g_player.stream = _sounds.over_g
 	add_child(_over_g_player)
 
 # ------------------------------------------------------------------------------
@@ -650,8 +427,8 @@ func _update_engine_voice(
 	if engine_kind == 2:
 		var prop_pitch: float = 1.0 + 0.37 * power
 		v.engine_player.pitch_scale = prop_pitch * v.doppler_factor
-		if v.engine_player.stream != _stream_prop0:
-			v.engine_player.stream = _stream_prop0
+		if v.engine_player.stream != _sounds.prop0:
+			v.engine_player.stream = _sounds.prop0
 			if v.engine_player.playing: v.engine_player.play()
 		if v.burner_player.playing:
 			v.burner_player.stop()
@@ -659,8 +436,8 @@ func _update_engine_voice(
 		var jet_pitch: float = 1.0 + 0.0625 * clamp(power * 10.0, 0.0, 9.0)
 		v.engine_player.pitch_scale = jet_pitch * v.doppler_factor
 		v.burner_player.pitch_scale = 1.0 * v.doppler_factor
-		if v.engine_player.stream != _stream_engine0:
-			v.engine_player.stream = _stream_engine0
+		if v.engine_player.stream != _sounds.engine0:
+			v.engine_player.stream = _sounds.engine0
 			if v.engine_player.playing: v.engine_player.play()
 
 	# Volumes
@@ -909,9 +686,9 @@ func _process_one_shots(
 		var pos := Vector3(launches[base + 1], launches[base + 2], launches[base + 3])
 		if cam_pos.distance_squared_to(pos) <= max_launch_d2:
 			match kind:
-				0: _play_oneshot(_stream_missile, pos, -4.0, LAUNCH_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
-				1: _play_oneshot(_stream_rocket, pos, -4.0, LAUNCH_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
-				2: _play_oneshot(_stream_bombsaway, pos, -6.0, LAUNCH_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				0: _play_oneshot(_sounds.missile, pos, -4.0, LAUNCH_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				1: _play_oneshot(_sounds.rocket, pos, -4.0, LAUNCH_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				2: _play_oneshot(_sounds.bombsaway, pos, -6.0, LAUNCH_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
 
 	# 2. Explosions: max 6 per frame, skip > 2500 m BEFORE taking a voice
 	var max_exp_d2 := EXPLOSION_MAX_DISTANCE * EXPLOSION_MAX_DISTANCE
@@ -927,11 +704,11 @@ func _process_one_shots(
 		var radius := explosions[base + 3]
 		var s: AudioStreamWAV = null
 		if radius < 6.0:
-			s = _stream_bang
+			s = _sounds.bang
 		elif radius < 15.0:
-			s = _stream_blast
+			s = _sounds.blast
 		else:
-			s = _stream_blast2
+			s = _sounds.blast2
 		_play_oneshot(s, pos, -6.0, EXPLOSION_UNIT_SIZE, EXPLOSION_MAX_DISTANCE) # -6 dB: stacked explosions clipped the master at 0 dB
 		exp_started += 1
 
@@ -939,11 +716,11 @@ func _process_one_shots(
 	if player_alive:
 		for ev in onetime:
 			match ev:
-				5: _play_oneshot(_stream_touchdwn, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
-				8: _play_oneshot(_stream_retractldg, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
-				9: _play_oneshot(_stream_extendldg, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
-				1: _play_oneshot(_stream_damage, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
-				6: _play_oneshot(_stream_hit, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				5: _play_oneshot(_sounds.touchdwn, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				8: _play_oneshot(_sounds.retractldg, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				9: _play_oneshot(_sounds.extendldg, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				1: _play_oneshot(_sounds.damage, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				6: _play_oneshot(_sounds.hit, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
 
 func _update_cockpit_warnings(player_dict: Dictionary, telemetry: Dictionary, player_alive: bool) -> void:
 	var is_alive: bool = telemetry.get("is_alive", true) and player_alive
@@ -959,9 +736,9 @@ func _update_cockpit_warnings(player_dict: Dictionary, telemetry: Dictionary, pl
 			_active_alarm_code = alarm
 			var s: AudioStreamWAV = null
 			match alarm:
-				1: s = _stream_stallhorn
-				2: s = _stream_warning
-				3: s = _stream_gearhorn
+				1: s = _sounds.stallhorn
+				2: s = _sounds.warning
+				3: s = _sounds.gearhorn
 			if s != null:
 				_alarm_player.stream = s
 				_alarm_player.volume_db = -8.0

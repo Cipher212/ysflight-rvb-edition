@@ -1,26 +1,100 @@
-# YSFlight RvB Edition - v0.1.0-pre-alpha
+# YSFlight RvB Edition - v0.2.0-pre-alpha
 
 YSFlight's flight simulation (YSFlight Community Edition) running inside the Godot 4 engine, built for
 the RvB (Red vs Blue) community events. **This is a pre-alpha test build**: expect bugs and missing
 features. Right now it starts a 16 vs 16 AI dogfight on the Luavi map with you in an F-16.
 
-## How to play (Windows 10/11, 64-bit)
+**New in v0.2.0:** faster (about 10% more FPS, much steadier frame times), YSFlight-style white wingtip
+lines, proper missile smoke trails, darker damage smoke, big black smoke and fire when a jet is shot
+down, and an FPS / latency readout in the top-right corner.
 
-1. Click the green **Code** button on this page, then **Download ZIP**.
-2. Unzip it anywhere (for example your Desktop). Any folder works.
-3. Double-click **`Play.bat`**.
-   - The first start downloads the free Godot 4.7.2 engine (about 86 MB, from the official Godot
-     GitHub page) and prepares the game files. This takes a minute or two and only happens once.
-   - If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
-4. You spawn in the air in an F-16. Have fun.
+---
 
-Other launchers:
-- **`Spectate_AI.bat`**: the AI flies your jet; press F1 to F8 to watch from different cameras.
-- **`Benchmark.bat`**: a 2-minute performance test (silent). Please send us the numbers.
+## How to play: step-by-step guide (no computer skills needed)
 
-If the download fails (no internet, firewall), download `Godot_v4.7.2-stable_win64.exe.zip` from
-https://godotengine.org/download/archive/ yourself and unzip it into a folder called `engine` next to
-`Play.bat`.
+### What you need
+- A **Windows 10 or Windows 11** PC (64-bit; almost every PC from the last 10 years).
+- About **500 MB** of free disk space.
+- An **internet connection** for the first start only (it downloads the free game engine, about 86 MB).
+- Graphics: laptops with built-in Intel graphics run it fine. Mac and Linux are not supported yet.
+
+### Step 1 - Download the game
+1. On this page, click the green **`<> Code`** button (near the top right of the file list).
+2. In the menu that opens, click **Download ZIP**.
+3. Your browser saves a file called `ysflight-rvb-edition-main.zip`, usually in your **Downloads**
+   folder.
+
+### Step 2 - Unzip it (important: do not play from inside the ZIP)
+1. Open your **Downloads** folder and find `ysflight-rvb-edition-main.zip`.
+2. **Right-click** it and choose **Extract All...**, then click **Extract**.
+   (On Windows 11 you may need **Show more options** first.)
+3. A new folder called `ysflight-rvb-edition-main` opens. Tip: move this folder to your Desktop or
+   Documents so it is easy to find. Any folder works.
+
+> If you double-click the ZIP instead of extracting it, Windows only *shows* the files inside and the
+> game cannot start. Always use **Extract All** first.
+
+### Step 3 - Start the game
+1. Open the extracted folder. Inside you will see files such as `Play.bat`, `README.md` and folders
+   like `godot_project`.
+2. Double-click **`Play`** (it may be shown as `Play.bat`, with a gear or window icon).
+3. **"Windows protected your PC"?** This blue box appears for any new program that isn't from a big
+   company. Click **More info**, then **Run anyway**. The game does not install anything on your PC.
+4. **First start only:** a black window opens and says it is downloading the Godot engine and
+   preparing the game files. **Wait 1-3 minutes** and do not close it. Next time the game starts in
+   a few seconds.
+5. The game window opens and you are flying an F-16 in the middle of a 16 vs 16 air battle.
+
+Keep the black window open while you play (it closes by itself when you quit the game).
+To **quit**, close the game window (or press Alt+F4).
+
+### Step 4 - Your first flight
+- **Steer with the mouse:** the mouse works like a control stick. The centre of the screen is
+  "stick centred"; move the mouse away from the centre to pitch and roll. Press **O** to re-centre.
+- **Speed:** **Q** / **A** for more / less throttle, **Tab** for afterburner (extra speed).
+- **Shoot:** **Left mouse** = gun, **Right mouse** (or **Space**) = missile. **2** switches weapons,
+  **4** drops flares to fool enemy missiles.
+- **Views:** **F1** = cockpit (with the HUD), **F2** = outside view. Hold **U H K M J N** to look around.
+- **Shot down?** You get a new jet automatically after 5 seconds.
+- **Settings** (controls, sensitivity, graphics): press **Esc**. **P** pauses.
+
+Prefer a gamepad or joystick? Just plug it in before starting; it is detected when you move it.
+Full key list: see [Controls](#controls-ysflight-defaults) below.
+
+### If the game runs slowly
+- The number in the **top-right corner** is your frame rate (FPS). 60 or more is smooth.
+- Press **Esc** and in the **Graphics** section set **Graphics Preset** to **Low**. This lowers the
+  3D resolution a little and uses simpler effects.
+- On laptops: plug in the charger and set Windows to **Best performance** (battery icon).
+- The FPS readout can be hidden in **Esc > HUD > Show FPS / Latency**.
+
+### Other ways to start
+- **`Spectate_AI`**: the computer flies your jet while you watch. **F1-F8** switch cameras, drag with
+  the mouse to look around, mouse wheel to zoom.
+- **`Benchmark`**: a 2-minute automatic performance test (silent, don't touch anything). At the end
+  a window shows the results; please send us a screenshot of it.
+
+### Updating to a new version
+Download the new ZIP and extract it into a **new** folder (you can delete the old folder). Your control
+settings are kept, because they are stored in Windows, not in the game folder.
+
+### Uninstalling
+Just delete the game folder. Nothing else was installed. (Your settings file is in
+`%APPDATA%\Godot\app_userdata\YSFlight Godot Port`, which you can delete too.)
+
+### Troubleshooting
+| Problem | What to do |
+|---|---|
+| "Windows protected your PC" | Click **More info**, then **Run anyway**. |
+| The black window closes immediately / "Download failed" | Your internet or firewall blocked the engine download. Download `Godot_v4.7.2-stable_win64.exe.zip` from https://godotengine.org/download/archive/ (4.7.2-stable, Windows 64-bit), right-click > **Extract All** into a folder named **`engine`** inside the game folder, then start `Play` again. |
+| Antivirus deletes or blocks `Play.bat` | It is a plain text script (right-click > Edit to read it). Allow it in your antivirus, or add the game folder as an exception. |
+| Nothing happens / the game can't find files | Make sure you used **Extract All** (Step 2) and are not running it from inside the ZIP. Very long folder paths can also cause trouble: move the folder to e.g. `C:\Games\`. |
+| No sound | Check that Windows sound isn't muted and the right output device is selected, then restart the game. |
+| The mouse stick drifts | Press **O** to re-centre, or change the stick device / dead zone in **Esc > Stick Device / Mouse**. |
+| Low FPS | See [If the game runs slowly](#if-the-game-runs-slowly). |
+| The game crashed | Please report it (below) and include `crashlog\latest_run.txt` from the game folder. |
+
+---
 
 ## Controls (YSFlight defaults)
 
@@ -32,7 +106,8 @@ https://godotengine.org/download/archive/ yourself and unzip it into a folder ca
 | Rudder | Z / X (centre) / C |
 | Fire weapon / gun | Space or right mouse / Ctrl or left mouse |
 | Change weapon / flare | 2 or middle mouse / 4 |
-| Direct weapon select | 5 gun, 6 short-range, 7 medium-range, 8 air-to-ground, 9 bombs |
+| Direct weapon select | 5 gun, 6 short-range, 7 medium-range, 8 air-to-ground, 0 bombs / rockets |
+| HUD colour | 9 |
 | Gear / flaps / brake / spoiler | G / F and R / B / D |
 | Views | F1 cockpit, F2 outside |
 | Look around | U H K M J N |
@@ -40,14 +115,15 @@ https://godotengine.org/download/archive/ yourself and unzip it into a folder ca
 | Recentre mouse stick | O |
 | Settings (controls, curves, graphics) | Esc |
 | Flight setup / respawn | F10 |
+| Debug text | F11 |
 | Pause | P |
 
-You respawn automatically 5 seconds after being shot down.
+You respawn automatically 5 seconds after being shot down. All keys can be changed in **Esc**.
 
 ## Reporting problems
 
-Tell us what you did and what happened. The file `crashlog\latest_run.txt` (created next to
-`Play.bat`) helps us a lot.
+Tell us what you did and what happened, what PC you have (laptop/desktop, graphics), and attach the file
+`crashlog\latest_run.txt` (created in the game folder, next to `Play.bat`). It helps us a lot.
 
 ## Credits
 
@@ -64,7 +140,12 @@ Full licence texts: `THIRD_PARTY_LICENSES.txt`.
 
 ## For developers
 
-The game code is in `godot_project/` (GDScript) and `gdextension/ysflight/src/` (the C++ bridge to the
-YSFlight simulation). A pre-built bridge (`godot_project/bin/*.dll`) is included, so you only need to
-rebuild it if you change the C++: install Python + SCons + Visual Studio 2022 C++ tools, then run
+The game code is in `godot_project/` (GDScript, organised in `camera/`, `controls/`, `fx/`, `audio/`,
+`ui/`, `core/`, `tests/`, shaders in `shaders/`) and `gdextension/ysflight/src/` (the C++ bridge to the
+YSFlight simulation, organised in `core/`, `render/`, `sim/`, `bridge/`). A pre-built bridge
+(`godot_project/bin/*.dll`) is included, so you only need to rebuild it if you change the C++: install
+Python + SCons + Visual Studio 2022 C++ tools, then run
 `python -m SCons platform=windows target=template_debug` in `gdextension/ysflight`.
+
+Automated test (plays the mission with scripted inputs and checks every system, with screenshots):
+`python tools/run_tests.py`. Please run it before sending changes.

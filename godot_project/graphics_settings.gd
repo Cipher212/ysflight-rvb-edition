@@ -11,7 +11,7 @@ class_name GraphicsSettings
 #   - msaa: Viewport MSAA 3D mode (Off / 2x / 4x / 8x).
 #   - fxaa: Viewport screen space FXAA toggle.
 #   - draw_distance_km: Camera3D far plane in metres (20..120 km).
-#   - fx_density: Multiplier for particle trail density (read by aircraft_fx.gd).
+#   - fx_density: effects quality Low/Medium/High -> main.set_effects_quality (trail points, puff pools).
 #   - graphics_preset: Synchronises Low/Medium/High presets or sets Custom on edit.
 #
 # BENCHMARK MODE:
@@ -98,6 +98,7 @@ func apply_all_settings() -> void:
 	_apply_msaa()
 	_apply_fxaa()
 	_apply_draw_distance()
+	_apply_fx_quality()
 
 func _apply_benchmark_defaults() -> void:
 	# In benchmark mode, enforce Medium values and leave vsync to benchmark.gd
@@ -109,6 +110,8 @@ func _apply_benchmark_defaults() -> void:
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 	if main != null and main.camera != null:
 		main.camera.far = 80000.0
+	if main != null:
+		main.set_effects_quality(1) # Medium
 
 func _apply_setting(key: String) -> void:
 	match key:
@@ -120,6 +123,8 @@ func _apply_setting(key: String) -> void:
 			_apply_fxaa()
 		"draw_distance_km":
 			_apply_draw_distance()
+		"fx_density":
+			_apply_fx_quality()
 
 func _apply_render_scale() -> void:
 	var vp: Viewport = get_viewport()
@@ -169,3 +174,9 @@ func _apply_draw_distance() -> void:
 		return
 	var dist_km: float = float(controls.get_value("draw_distance_km", 80.0))
 	main.camera.far = clamp(dist_km, 20.0, 120.0) * 1000.0
+
+func _apply_fx_quality() -> void:
+	if main == null or controls == null:
+		return
+	var names := ["Low", "Medium", "High"]
+	main.set_effects_quality(maxi(names.find(str(controls.get_value("fx_density", "Medium"))), 0))

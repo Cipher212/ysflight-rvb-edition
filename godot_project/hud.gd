@@ -41,6 +41,7 @@ var ground_transforms: Dictionary = {}
 var _font: Font = null
 var _fuel_low_triggered: bool = false
 var _fuel_banner_timer: float = 0.0
+var _drew_last_frame := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -78,7 +79,10 @@ func update_hud(
 	if _fuel_banner_timer > 0.0:
 		_fuel_banner_timer = maxf(0.0, _fuel_banner_timer - delta)
 
-	queue_redraw()
+	# Only the cockpit view draws anything; redraw once more after leaving it to clear the canvas
+	if cam_mode == 1 or _drew_last_frame:
+		queue_redraw()
+	_drew_last_frame = cam_mode == 1
 
 func _draw() -> void:
 	if camera == null or telemetry.is_empty():

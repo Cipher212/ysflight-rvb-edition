@@ -46,7 +46,7 @@ env.Append(CPPPATH=[
 ])
 
 # Source files
-sources = Glob("src/*.cpp")
+sources = Glob("src/*.cpp") + Glob("src/*/*.cpp")  # the node + its modules (core/, render/, sim/, bridge/)
 
 # Recursively get all YSFlight source files (excluding legacy ui, graphics, network)
 ys_src_dirs = [
@@ -87,9 +87,6 @@ for src in sources:
     if filename not in exclude_files:
         filtered_sources.append(src)
 
-print("DEBUG FILTERED SOURCES:")
-for f in filtered_sources:
-    print(str(f))
 if env["platform"] == "windows":
     library = env.SharedLibrary(
         "bin/ysflight_godot{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
