@@ -1,0 +1,106 @@
+#!/usr/bin/env python
+import os
+
+env = SConscript("../godot-cpp/SConstruct").Clone()
+
+# Disable doc generation for now
+env.Append(LINKFLAGS=["/IGNORE:4088", "/WX:NO", "/DEBUG", "/MAP"], LIBS=["Gdi32", "User32", "shell32", "Advapi32", "Ws2_32", "Ole32"])
+
+# Include paths for YSFlight core and public libraries
+env.Append(CPPPATH=[
+    "src/",
+    "../../ysce/src/core",
+    "../../ysce/src/common",
+    "../../ysce/src/util",
+    "../../ysce/src/dynamics",
+    "../../ysce/src/filename",
+    "../../ysce/src/scenery",
+    "../../ysce/src/autopilot",
+    "../../ysce/src/vehicle",
+    "../../ysce/src/pathplanning",
+    "../../ysce/src/externalconsole",
+    "../../ysce/src/graphics/common",
+    "../../ysce/src/graphics/null",
+    "../../ysce/src/config",
+    "../../ysce_public/src/ysclass/src",
+    "../../ysce_public/src/ysclass11/src",
+    "../../ysce_public/src/ysport/src",
+    "../../ysce_public/src/ysbitmap/src",
+    "../../ysce_public/src/ysgebl/src/shellrender",
+    "../../ysce_public/src/ysgebl/src/kernel",
+    "../../ysce_public/src/ysgebl/src/kernelutil",
+    "../../ysce_public/src/ysgebl/src/main",
+    "../../ysce_public/src/fssimplewindow/src",
+    "../../ysce_public/src/fsguilib/src",
+    "../../ysce_public/src/fsguilib/filedialog",
+    "../../ysce_public/src/ysfontrenderer/src",
+    "../../ysce_public/src/yssystemfont/src",
+    "../../ysce_public/src/ysbitmapfont/src",
+    "../../ysce_public/src/ysglcpp/src",
+    "../../ysce_public/src/ystexturemanager/src",
+    "../../ysce_public/src/yssocket/src",
+    "../../ysce/src/platform/common",
+    "../../ysce/src/platform/nownd",
+    "../../ysce/src/voicedll",
+    "../../ysce/src",
+])
+
+# Source files
+sources = Glob("src/*.cpp")
+
+# Recursively get all YSFlight source files (excluding legacy ui, graphics, network)
+ys_src_dirs = [
+    "core", "common", "util", "dynamics", "filename", "scenery", "autopilot",
+    "vehicle", "pathplanning", "config", "externalconsole", "graphics/common", "graphics/null", "platform/nownd", "platform/common"
+]
+
+env.Append(CPPDEFINES=["WIN32", "_WIN32"])
+
+for d in ys_src_dirs:
+    sources += Glob(f"../../ysce/src/{d}/*.cpp")
+    sources += Glob(f"../../ysce/src/{d}/*.c")
+
+public_src_dirs = [
+    "ysclass/src", "ysclass11/src", "ysport/src", "ysbitmap/src",
+    "ysgebl/src/kernel", "ysgebl/src/kernelutil", "ysgebl/src/shellrender", "yssystemfont/src",
+    "ysglcpp/src", "ystexturemanager/src",
+    "ysglcpp/src/nownd", "ystexturemanager/src/null", "yssystemfont/src/null", "ysgebl/src/shellrender/nownd",
+    "ysfontrenderer/src", "yssocket/src", "fsguilib/src", "fsguilib/src/nownd", "fsguilib/src/miscdlg", "fsguilib/filedialog", "fsguilib/src/windows", "fssimplewindow/src", "fssimplewindow/src/nownd", "ysbitmapfont/src"
+]
+for d in public_src_dirs:
+    sources += Glob(f"../../ysce_public/src/{d}/*.cpp")
+
+sources += [File("../../ysce_public/src/ysbitmapfont/src/ysglfontdata.c"), File("../../ysce_public/src/ysbitmapfont/src/ysglfontbitmaputil.c"), File("../../ysce_public/src/ysbitmapfont/src/ysglmaketextbitmap.c")]
+
+filtered_sources = []
+filtered_sources += [File("../../ysce_public/src/ysport/src/windows/yswin32fileio.cpp"), File("../../ysce_public/src/ysport/src/windows/yswin32specialpath.cpp"), File("../../ysce_public/src/ysport/src/windows/yswin32locale.cpp"), File("../../ysce_public/src/ysport/src/windows/yswin32encoding.cpp"), File("../../ysce_public/src/ysport/src/windows/yswin32fileinfo.cpp")]
+
+exclude_files = [
+    "ysgltess.cpp", "ysscenerygl.cpp", "ysscenerygl2.0.cpp", "yssceneryd3d.cpp",
+    "fsgl.cpp", "fswin32.cpp", "fsx11.cpp",
+    "fsguifiledialog_linux.cpp", "fsguifiledialog_mac_cpp.cpp", "fsguifiledialog_nodialog.cpp",
+    "fsguiclipboard.cpp"
+]
+
+for src in sources:
+    filename = str(src).replace("\\", "/").split("/")[-1]
+    if filename not in exclude_files:
+        filtered_sources.append(src)
+
+print("DEBUG FILTERED SOURCES:")
+for f in filtered_sources:
+    print(str(f))
+if env["platform"] == "windows":
+    library = env.SharedLibrary(
+        "bin/ysflight_godot{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=filtered_sources,
+    )
+else:
+    library = env.SharedLibrary(
+        "bin/ysflight_godot{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=filtered_sources,
+    )
+
+env.NoCache(library)
+env.AddPostAction(library, Copy("../../godot_project/bin", library[0]))
+Default(library)

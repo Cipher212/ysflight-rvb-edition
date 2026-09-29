@@ -1,0 +1,22 @@
+# Build artifacts
+*.obj
+*.pdb
+*.map
+*.ilk
+*.exp
+*.lib
+.sconsign.dblite
+gdextension/ysflight/scons_debug.txt
+gdextension/ysflight/bin/
+
+# Godot cache (recreated on first start)
+godot_project/.godot/
+
+# Godot runtime downloaded by tools/get_godot.bat
+/engine/
+
+# Runtime logs, benchmark output, Python cache
+/crashlog/
+__pycache__/
+*.pyc
+*.lnk
