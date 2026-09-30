@@ -44,7 +44,8 @@ func setup(p_main: Node, p_sim: YSFlightSimulation) -> void:
 	var tel: Dictionary = sim.get_player_telemetry()
 	selected_aircraft = str(tel.get("identifier", ""))
 	selected_team = 1 if int(tel.get("iff", 0)) == 3 else 0
-	auto_respawn = not bool(main.get("benchmark_mode"))
+	# Off in benchmarks (comparable runs) and in offline events (the event's spawn menu takes over)
+	auto_respawn = not bool(main.get("benchmark_mode")) and not bool(main.get("event_mode"))
 	_build_panel()
 
 func _process(delta: float) -> void:
@@ -93,7 +94,7 @@ func _pick_start_position(iff: int) -> String:
 # Placeholder panel (F10)
 # ------------------------------------------------------------------------------
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F10:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F10 			and not bool(main.get("event_mode")):
 		_set_panel_visible(not _layer.visible)
 		get_viewport().set_input_as_handled()
 

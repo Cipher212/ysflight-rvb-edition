@@ -18,8 +18,8 @@ static bool is_loadout_command(const char *cmd) {
     return strncmp(cmd, "UNLOADWP", 8) == 0 || strncmp(cmd, "LOADWEPN", 8) == 0 || strncmp(cmd, "INITIGUN", 8) == 0;
 }
 
-static const char *died_of_name(FSDIEDOF d) {
-    switch (d) {
+const char *died_of_name(int died_of) {
+    switch ((FSDIEDOF)died_of) {
     case FSDIEDOF_STEEPLANDING: return "STEEPLANDING";
     case FSDIEDOF_LANDINGGEARNOTEXTENDED: return "GEARUP";
     case FSDIEDOF_BADBANKANGLE: return "BADBANK";
@@ -108,45 +108,13 @@ void AiRespawn::update(FsWorld *world, FsSimulation *sim, double dt) {
     }
 }
 
-bool AiRespawn::respawn(FsWorld *world, FsSimulation *sim, const Dead &d) {
-    std::vector<std::string> candidates;
-    const PackedStringArray stps = start_position_names(world, sim);
-    if (!is_rvb_ground_ops()) {
-        // Air starts: the map's AI spots ("AI_BLUE_NORTH", "AI_RED_EAST").
-        const String team = (d.iff == 0 ? "AI_BLUE" : (d.iff == 3 ? "AI_RED" : "AI_IFF"));
-        for (int i = 0; i < stps.size(); ++i) {
-            if (stps[i].to_upper().begins_with(team)) {
-                candidates.push_back(stps[i].utf8().get_data());
-            }
-        }
-    } else {
-        const String tag = String("[IFF") + String::num_int64(d.iff + 1) + "]";
-        const bool heli = (world->IsHelicopterTemplate(d.identifier.c_str()) == YSTRUE);
-        for (int i = 0; i < stps.size(); ++i) {
-            // Carrier decks only on a catapult (the AI launches straight from there).
-            const bool deck = stps[i].find("CARRIER") >= 0 && stps[i].find("CATAPULT") < 0;
-            // Not on a runway (jets rolling for take-off run into it) or in a hangar (jets hit the wall).
-            const String up = stps[i].to_upper();
-            const bool avoid = up.find("RUNWAY") >= 0 || up.find("RUWNAY") >= 0 || up.find("_STRIP") >= 0 ||
-                               up.find("HANGAR") >= 0;
-            if (stps[i].find(tag) >= 0 && (heli || stps[i].find("(HELI ONLY)") < 0) && !deck && !avoid) {
-                candidates.push_back(stps[i].utf8().get_data());
-            }
-        }
+// Shuffles the candidate start positions (rand(): follows the benchmark / test seed) and settles air at the
+// first one with no other aircraft within FREE_RADIUS. nullptr if all are occupied.
+static const std::string *settle_at_free_spot(FsWorld *world, FsSimulation *sim, FsAirplane *air,
+                                              std::vector<std::string> &candidates) {
+    for (size_t i = candidates.size(); i > 1; --i) {
+        std::swap(candidates[i - 1], candidates[(size_t)rand() % i]);
     }
-    if (candidates.empty()) {
-        return false;
-    }
-    for (size_t i = candidates.size() - 1; i > 0; --i) {  // rand(): follows the benchmark / test seed
-        std::swap(candidates[i], candidates[(size_t)rand() % (i + 1)]);
-    }
-
-    FsAirplane *air = world->AddAirplane(d.identifier.c_str(), YSFALSE);
-    if (air == nullptr) {
-        log_line(String("AI respawn: unknown aircraft ") + d.identifier.c_str());
-        return false;
-    }
-    const std::string *spot = nullptr;
     for (const auto &stp : candidates) {
         if (world->SettleAirplane(*air, stp.c_str()) != YSOK) {
             continue;
@@ -154,26 +122,88 @@ bool AiRespawn::respawn(FsWorld *world, FsSimulation *sim, const Dead &d) {
         bool free = true;
         for (FsAirplane *other = nullptr; (other = sim->FindNextAirplane(other)) != nullptr;) {
             if (other != air && other->IsAlive() == YSTRUE &&
-                (other->GetPosition() - air->GetPosition()).GetSquareLength() < FREE_RADIUS * FREE_RADIUS) {
+                (other->GetPosition() - air->GetPosition()).GetSquareLength() < AiRespawn::FREE_RADIUS * AiRespawn::FREE_RADIUS) {
                 free = false;
                 break;
             }
         }
         if (free) {
-            spot = &stp;
-            break;
+            return &stp;
         }
     }
+    return nullptr;
+}
+
+FsAirplane *spawn_ai_in_air(FsWorld *world, FsSimulation *sim, const std::string &identifier, int iff, int role,
+                            const std::vector<std::string> &loadout) {
+    const String team = (iff == 0 ? "AI_BLUE" : (iff == 3 ? "AI_RED" : "AI_IFF"));
+    std::vector<std::string> candidates;
+    const PackedStringArray stps = start_position_names(world, sim);
+    for (int i = 0; i < stps.size(); ++i) {
+        const String up = stps[i].to_upper();
+        if (up.begins_with(team) && !up.contains("CARRIER")) { // AI_BLUE_CARRIER is a deck: no air start there
+            candidates.push_back(stps[i].utf8().get_data());
+        }
+    }
+    if (candidates.empty()) {
+        return nullptr;
+    }
+    FsAirplane *air = world->AddAirplane(identifier.c_str(), YSFALSE);
+    if (air == nullptr) {
+        log_line(String("AI spawn: unknown aircraft ") + identifier.c_str());
+        return nullptr;
+    }
+    const std::string *spot = settle_at_free_spot(world, sim, air, candidates);
+    if (spot == nullptr) {
+        sim->DeleteAirplane(air);
+        return nullptr;
+    }
+    air->SetIff((FSIFF)iff);
+    air->SendCommand("INITSPED 200m/s"); // Luavi's AI_BLUE_EAST says 1502 m/s
+    air->SendCommand("CTLLDGEA FALSE");
+    for (const auto &cmd : loadout) {
+        air->SendCommand(cmd.c_str());
+    }
+    air->SetAutopilot(FsRvbTacticalAutopilot::Create((FSRVBROLE)role));
+    log_line(String("AI spawn: ") + identifier.c_str() + " at " + spot->c_str());
+    return air;
+}
+
+bool AiRespawn::respawn(FsWorld *world, FsSimulation *sim, const Dead &d) {
+    if (!is_rvb_ground_ops()) {
+        return spawn_ai_in_air(world, sim, d.identifier, d.iff, d.role, d.loadout) != nullptr;
+    }
+    // Archived ground operations: a free team start position on the ground.
+    std::vector<std::string> candidates;
+    const PackedStringArray stps = start_position_names(world, sim);
+    const String tag = String("[IFF") + String::num_int64(d.iff + 1) + "]";
+    const bool heli = (world->IsHelicopterTemplate(d.identifier.c_str()) == YSTRUE);
+    for (int i = 0; i < stps.size(); ++i) {
+        // Carrier decks only on a catapult (the AI launches straight from there).
+        const bool deck = stps[i].find("CARRIER") >= 0 && stps[i].find("CATAPULT") < 0;
+        // Not on a runway (jets rolling for take-off run into it) or in a hangar (jets hit the wall).
+        const String up = stps[i].to_upper();
+        const bool avoid = up.find("RUNWAY") >= 0 || up.find("RUWNAY") >= 0 || up.find("_STRIP") >= 0 ||
+                           up.find("HANGAR") >= 0;
+        if (stps[i].find(tag) >= 0 && (heli || stps[i].find("(HELI ONLY)") < 0) && !deck && !avoid) {
+            candidates.push_back(stps[i].utf8().get_data());
+        }
+    }
+    if (candidates.empty()) {
+        return false;
+    }
+    FsAirplane *air = world->AddAirplane(d.identifier.c_str(), YSFALSE);
+    if (air == nullptr) {
+        log_line(String("AI respawn: unknown aircraft ") + d.identifier.c_str());
+        return false;
+    }
+    const std::string *spot = settle_at_free_spot(world, sim, air, candidates);
     if (spot == nullptr) {
         sim->DeleteAirplane(air);
         return false;
     }
-
     air->SetIff((FSIFF)d.iff);
-    if (!is_rvb_ground_ops()) {
-        air->SendCommand("INITSPED 200m/s"); // Luavi's AI_BLUE_EAST says 1502 m/s
-        air->SendCommand("CTLLDGEA FALSE");
-    } else if (spot->find("CARRIER") != std::string::npos) {
+    if (spot->find("CARRIER") != std::string::npos) {
         air->SendCommand("INITSPED 0kt");
     }
     for (const auto &cmd : d.loadout) {

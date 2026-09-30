@@ -18,6 +18,7 @@
 #include "render/visual_sync.h"
 #include "render/weapon_fx_renderer.h"
 #include "sim/ai_respawn.h"
+#include "sim/event_match.h"
 #include "sim/motion_interp.h"
 
 class FsWorld;
@@ -62,6 +63,15 @@ public:
     void set_rvb_ai_enabled(bool enabled);      // before load_yfs; false = stock YS AI (--stock-ai)
     void set_ai_respawn_enabled(bool enabled);
     void set_ai_ground_ops(bool enabled);       // archived RTB / landing / taxi (--ai-ground-ops)
+
+    // Offline RvB event (sim/event_match.h; data formats: logs/UI_scheme.md "Event data")
+    Array get_aircraft_catalog();               // [{identifier, team, role}]; loads templates if no mission yet
+    bool event_begin(Dictionary config);        // after load_yfs of the generated mission
+    bool apply_player_loadout(String preset);   // sim/flight_setup.h presets
+    Dictionary get_event_state() const;         // per frame: time_left, ended, team kills, player status
+    Dictionary get_event_results() const;       // debrief
+    void event_leave_jet();                     // Esc x2: the player's aircraft is removed (not a death)
+    void event_end();                           // ends the event now (pause menu "End event")
     Dictionary get_ai_state();
     void set_sim_speed(int64_t steps_per_tick);  // AI soak runs only: >1 runs the sim faster than real time
 
@@ -125,6 +135,7 @@ private:
     ysgd::TrailRenderer trails;
     ysgd::WeaponFxRenderer weapon_fx;
     ysgd::AiRespawn ai_respawn;
+    ysgd::EventMatch event_match;
     int sim_speed = 1;
     int radar_mode = 0; // 0 = every aircraft within range; 1 = nose cone only (see radar_query.h)
     Color map_base_color = Color(0.3f, 0.45f, 0.5f);

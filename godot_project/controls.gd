@@ -19,6 +19,8 @@ const SETTINGS: Array[Dictionary] = preload("res://controls/settings_schema.gd")
 var main: Node = null
 var ysflight_sim: YSFlightSimulation = null
 var settings_panel: CanvasLayer = null
+# Set by core/event_session.gd during an offline event: Esc ("open_settings") goes there instead.
+var open_settings_handler: Callable = Callable()
 
 var _config: ConfigFile = ConfigFile.new()
 var _values: Dictionary = {}
@@ -290,7 +292,10 @@ func _input(event: InputEvent) -> void:
 func _on_action_pressed(action: String) -> void:
 	# Menu & Pause work even during spectator/ai mode or pause
 	if action == "open_settings":
-		toggle_settings()
+		if open_settings_handler.is_valid():
+			open_settings_handler.call()
+		else:
+			toggle_settings()
 		return
 	elif action == "pause":
 		toggle_pause()
@@ -416,7 +421,8 @@ func toggle_pause() -> void:
 		return
 	tree.paused = not tree.paused
 
-func toggle_settings() -> void:
+# pause = false during offline events (the event clock and the AI keep running)
+func toggle_settings(pause: bool = true) -> void:
 	if settings_panel == null:
 		return
 	if settings_panel.visible:
@@ -425,7 +431,7 @@ func toggle_settings() -> void:
 			get_tree().paused = false
 	else:
 		_paused_before_settings = get_tree().paused
-		get_tree().paused = true
+		get_tree().paused = pause
 		settings_panel.visible = true
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 

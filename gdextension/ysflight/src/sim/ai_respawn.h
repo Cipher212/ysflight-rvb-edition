@@ -17,8 +17,17 @@
 
 class FsWorld;
 class FsSimulation;
+class FsAirplane;
 
 namespace ysgd {
+
+// Places a new RvB AI aircraft in the air at a free "AI_BLUE_*" / "AI_RED_*" spot of the map (200 m/s, gear
+// up) with the given loadout commands and the tactical AI for role. nullptr if the aircraft type is unknown or
+// every spot is occupied (try again shortly). Used by AI respawns and by the offline event (event_match.h).
+FsAirplane *spawn_ai_in_air(FsWorld *world, FsSimulation *sim, const std::string &identifier, int iff, int role,
+                            const std::vector<std::string> &loadout);
+// YS cause of death as text (MISSILE, GUN, TERRAIN, COLLISION, ...).
+const char *died_of_name(int died_of); // FSDIEDOF
 
 class AiRespawn {
 public:

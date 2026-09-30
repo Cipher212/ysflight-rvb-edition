@@ -21,7 +21,9 @@ def main():
         return 2
     started = sorted(glob.glob(os.path.join(ROOT, "crashlog", "tests", "*")))
     try:
-        proc = subprocess.run([GODOT, "--path", os.path.join(ROOT, "godot_project"), "--", "--run-tests"],
+        # Silent: the dummy audio driver still runs the audio code paths
+        proc = subprocess.run([GODOT, "--audio-driver", "Dummy", "--path", os.path.join(ROOT, "godot_project"),
+                               "--", "--run-tests"],
                               capture_output=True, text=True, timeout=TIMEOUT_S, errors="replace")
     except subprocess.TimeoutExpired:
         print("FAIL: the test run did not finish within", TIMEOUT_S, "s")

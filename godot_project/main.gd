@@ -28,6 +28,12 @@ const PerfLogScript = preload("res://core/perf_log.gd")
 const TestRunnerScript = preload("res://tests/test_runner.gd")
 const AiSoakScript = preload("res://tests/ai_soak.gd")
 const SkyEnvironmentScript = preload("res://world/sky_environment.gd")
+const AppState = preload("res://core/app_state.gd")
+const EventConfig = preload("res://core/event_config.gd")
+const EventMission = preload("res://core/event_mission.gd")
+const EventSessionScript = preload("res://core/event_session.gd")
+const EventOverlayScript = preload("res://ui/event_overlay.gd")
+const SpawnMenuScript = preload("res://ui/spawn_menu.gd")
 const SpeedStreaksScript = preload("res://fx/speed_streaks.gd")
 const SunGlareScript = preload("res://fx/sun_glare.gd")
 const BlastGlowScript = preload("res://fx/blast_glow.gd")
@@ -52,6 +58,8 @@ var benchmark: Node = null
 var benchmark_mode := false
 var ai_player_mode := false # --ai-player: the YS dogfight AI flies the player jet (spectating)
 var test_mode := false      # --run-tests: tests/test_runner.gd plays through the mission and quits
+var event_mode := false     # offline RvB event (core/app_state.gd, set by the menus)
+var event_session: Node = null
 
 var _puffs: Node3D = null
 var _explosions: Node3D = null
@@ -72,6 +80,7 @@ func _ready() -> void:
 	test_mode = "--run-tests" in args
 	var soak_i := args.find("--ai-soak")
 	ai_player_mode = benchmark_mode or soak_i >= 0 or "--ai-player" in args
+	event_mode = AppState.mode == "event" and not (benchmark_mode or test_mode or ai_player_mode)
 
 	_add_sun()
 	ysflight_sim = YSFlightSimulation.new()
@@ -86,6 +95,10 @@ func _ready() -> void:
 	var mi := args.find("--mission")
 	if mi >= 0 and mi + 1 < args.size():
 		mission = args[mi + 1] # e.g. stresstest.bat: res://mission/luavi_stresstest_32v32.yfs
+	var event_config := {}
+	if event_mode:
+		event_config = EventConfig.load_config()
+		mission = EventMission.write(event_config) # map + rules only; the event spawns the aircraft
 	ysflight_sim.load_yfs(mission)
 	if "--no-interp" in args:
 		ysflight_sim.set_interpolation_enabled(false) # A/B test: show the latest physics tick, no blending
@@ -184,7 +197,17 @@ func _ready() -> void:
 	camera_rig.set_mode(camera_rig.CamMode.HORIZON_CHASE)
 	camera_rig.update(0.016, ysflight_sim.get_player_transform(), tel, ysflight_sim.get_airplane_transforms())
 
-	if benchmark_mode:
+	if event_mode:
+		event_session = EventSessionScript.new()
+		add_child(event_session)
+		event_session.setup(self, event_config) # its first spawn_menu_requested is deferred: menus get it
+		var overlay: CanvasLayer = EventOverlayScript.new()
+		add_child(overlay)
+		overlay.setup(event_session)
+		var spawn_menu: CanvasLayer = SpawnMenuScript.new()
+		add_child(spawn_menu)
+		spawn_menu.setup(event_session)
+	elif benchmark_mode:
 		benchmark = BenchmarkScript.new()
 		benchmark.name = "Benchmark"
 		add_child(benchmark)

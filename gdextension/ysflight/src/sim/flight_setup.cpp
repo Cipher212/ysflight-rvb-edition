@@ -54,9 +54,44 @@ bool respawn_player(FsWorld *world, FsSimulation *sim, const String &airplane_na
     air->SetIff((FSIFF)iff);
     if (start_position.find("CARRIER") >= 0) {
         air->SendCommand("INITSPED 0kt");
+    } else if (start_position.to_upper().begins_with("AI_")) { // the map's air-start spots (AI respawns use them)
+        air->SendCommand("INITSPED 200m/s");                  // Luavi's AI_BLUE_EAST says 1502 m/s
+        air->SendCommand("CTLLDGEA FALSE");
     }
     sim->SetPlayerAirplane(air);
     log_line(String("respawn_player: ") + airplane_name + " at " + start_position + " IFF" + String::num_int64(iff + 1));
+    return true;
+}
+
+bool apply_player_loadout(FsSimulation *sim, const String &preset) {
+    FsAirplane *air = sim != nullptr ? sim->GetPlayerAirplane() : nullptr;
+    if (air == nullptr || preset == "DEFAULT") {
+        return air != nullptr;
+    }
+    YsArray<int, 64> loading;
+    air->Prop().GetWeaponConfig(loading);
+    YsArray<int, 64> keep;
+    for (YSSIZE_T i = 0; i + 1 < loading.GetN(); i += 2) {
+        const FSWEAPONTYPE t = (FSWEAPONTYPE)loading[i];
+        const bool aam = (t == FSWEAPON_AIM9 || t == FSWEAPON_AIM9X || t == FSWEAPON_AIM120);
+        const bool ground = (t == FSWEAPON_AGM65 || t == FSWEAPON_BOMB || t == FSWEAPON_BOMB250 ||
+                             t == FSWEAPON_BOMB500HD || t == FSWEAPON_ROCKET);
+        bool ok = true;
+        if (preset == "AIR-TO-AIR") {
+            ok = !ground;
+        } else if (preset == "STRIKE") {
+            ok = (t != FSWEAPON_AIM120);
+        } else if (preset == "GUNS ONLY") {
+            ok = !aam && !ground;
+        }
+        if (ok) {
+            keep.Append(loading[i]);
+            keep.Append(loading[i + 1]);
+        }
+    }
+    air->SendCommand("UNLOADWP");
+    air->AutoSendCommand(keep.GetN(), keep);
+    log_line(String("Player loadout: ") + preset);
     return true;
 }
 

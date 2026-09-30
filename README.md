@@ -2,7 +2,8 @@
 
 YSFlight's flight simulation (YSFlight Community Edition) running inside the Godot 4 engine, built for
 the RvB (Red vs Blue) community events. **This is a pre-alpha test build**: expect bugs and missing
-features. Right now it starts a 16 vs 16 AI dogfight on the Luavi map with you in an F-16.
+features. Right now you can set up and fly an offline RvB event against the AI on the Luavi map
+(up to 18 vs 18).
 
 **New in v0.3.0:**
 - **Smarter AI:** enemies and wingmen now fly by role (fighters, attackers, bombers, close air support,
@@ -15,6 +16,16 @@ features. Right now it starts a 16 vs 16 AI dogfight on the Luavi map with you i
   YSFlight-style aircraft shadows, sun and explosion glare, speed lines and mist.
 - **Spectator cameras** (F5 / F6) stay locked on the aircraft you picked.
 - **New Graphics options** to switch each of the new effects off on slower PCs.
+- **Main menu and offline events** (in the RvB website's style): pick your team and callsign, the event
+  length (5 minutes to 2 hours), rules (mid-air collisions, friendly fire) and up to 18 AI pilots per
+  side. Quick buttons fill a side with random aircraft of a chosen role or copy one side to the other.
+  AI pilots keep their names across respawns so their scores add up.
+- **Spawn menu during the event:** choose your aircraft, start position and loadout (Default,
+  Air-to-Air, Strike, Guns Only). The clock and the AI keep running while you choose.
+- **RvB leave rule:** press **Esc twice** to leave your jet. It is free when you have landed and stopped;
+  in the air or while rolling it counts as a death.
+- **Debrief** when the time runs out: winner, kills and losses per team, every pilot's air and ground
+  kills, deaths and missile hit rate, and a kill log. **Export CSV** saves it to the `results` folder.
 
 (v0.2.0 brought more FPS, YSFlight-style wingtip lines, missile smoke trails, fire and smoke when a jet is
 shot down, and the FPS readout.)
@@ -54,7 +65,8 @@ shot down, and the FPS readout.)
 4. **First start only:** a black window opens and says it is downloading the Godot engine and
    preparing the game files. **Wait 1-3 minutes** and do not close it. Next time the game starts in
    a few seconds.
-5. The game window opens and you are flying an F-16 in the middle of a 16 vs 16 air battle.
+5. The game window opens on the **main menu**. Click **LOCAL**, set up your event (or keep the last
+   one) and click **FLY**. In the spawn menu pick your aircraft and click **FLY** again.
 
 Keep the black window open while you play (it closes by itself when you quit the game).
 To **quit**, close the game window (or press Alt+F4).
@@ -66,20 +78,23 @@ To **quit**, close the game window (or press Alt+F4).
 - **Shoot:** **Left mouse** = gun, **Right mouse** (or **Space**) = missile. **2** switches weapons,
   **4** drops flares to fool enemy missiles.
 - **Views:** **F1** = cockpit (with the HUD), **F2** = outside view. Hold **U H K M J N** to look around.
-- **Shot down?** You get a new jet automatically after 5 seconds.
-- **Settings** (controls, sensitivity, graphics): press **Esc**. **P** pauses.
+- **Shot down?** The spawn menu opens after 3 seconds; pick a jet and fly again.
+- **Leave your jet:** press **Esc** twice (costs a death unless you have landed and stopped).
+- **Settings** (controls, sensitivity, graphics): **SETTINGS** on the main menu or in the spawn menu.
+  Events never pause.
+- **End early:** **END EVENT** in the spawn menu (click twice to confirm).
 
 Prefer a gamepad or joystick? Just plug it in before starting; it is detected when you move it.
 Full key list: see [Controls](#controls-ysflight-defaults) below.
 
 ### If the game runs slowly
 - The number in the **top-right corner** is your frame rate (FPS). 60 or more is smooth.
-- Press **Esc** and in the **Graphics** section set **Graphics Preset** to **Low**. This lowers the
+- Open **Settings** and in the **Graphics** section set **Graphics Preset** to **Low**. This lowers the
   3D resolution a little and switches the heavier effects off.
 - Or keep **Medium** and untick single effects in the same section: **Aircraft Shadows**, **Cloud
   Shadows**, **Water Shine**, **Afterburner Heat Haze**, **Sun & Explosion Glare**, **Speed Lines & Mist**.
 - On laptops: plug in the charger and set Windows to **Best performance** (battery icon).
-- The FPS readout can be hidden in **Esc > HUD > Show FPS / Latency**.
+- The FPS readout can be hidden in **Settings > HUD > Show FPS / Latency**.
 
 ### Other ways to start
 - **`Spectate_AI`**: the computer flies your jet while you watch. **F1-F8** switch cameras, drag with
@@ -104,7 +119,7 @@ Just delete the game folder. Nothing else was installed. (Your settings file is 
 | Antivirus deletes or blocks `Play.bat` | It is a plain text script (right-click > Edit to read it). Allow it in your antivirus, or add the game folder as an exception. |
 | Nothing happens / the game can't find files | Make sure you used **Extract All** (Step 2) and are not running it from inside the ZIP. Very long folder paths can also cause trouble: move the folder to e.g. `C:\Games\`. |
 | No sound | Check that Windows sound isn't muted and the right output device is selected, then restart the game. |
-| The mouse stick drifts | Press **O** to re-centre, or change the stick device / dead zone in **Esc > Stick Device / Mouse**. |
+| The mouse stick drifts | Press **O** to re-centre, or change the stick device / dead zone in **Settings > Stick Device / Mouse**. |
 | Low FPS | See [If the game runs slowly](#if-the-game-runs-slowly). |
 | The game crashed | Please report it (below) and include `crashlog\latest_run.txt` from the game folder. |
 

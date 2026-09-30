@@ -92,6 +92,13 @@ void YSFlightSimulation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_rvb_ai_enabled", "enabled"), &YSFlightSimulation::set_rvb_ai_enabled);
     ClassDB::bind_method(D_METHOD("set_ai_respawn_enabled", "enabled"), &YSFlightSimulation::set_ai_respawn_enabled);
     ClassDB::bind_method(D_METHOD("set_ai_ground_ops", "enabled"), &YSFlightSimulation::set_ai_ground_ops);
+    ClassDB::bind_method(D_METHOD("get_aircraft_catalog"), &YSFlightSimulation::get_aircraft_catalog);
+    ClassDB::bind_method(D_METHOD("event_begin", "config"), &YSFlightSimulation::event_begin);
+    ClassDB::bind_method(D_METHOD("get_event_state"), &YSFlightSimulation::get_event_state);
+    ClassDB::bind_method(D_METHOD("get_event_results"), &YSFlightSimulation::get_event_results);
+    ClassDB::bind_method(D_METHOD("event_leave_jet"), &YSFlightSimulation::event_leave_jet);
+    ClassDB::bind_method(D_METHOD("event_end"), &YSFlightSimulation::event_end);
+    ClassDB::bind_method(D_METHOD("apply_player_loadout", "preset"), &YSFlightSimulation::apply_player_loadout);
     ClassDB::bind_method(D_METHOD("get_ai_state"), &YSFlightSimulation::get_ai_state);
     ClassDB::bind_method(D_METHOD("set_sim_speed", "steps_per_tick"), &YSFlightSimulation::set_sim_speed);
     ClassDB::bind_method(D_METHOD("get_airplane_template_names"), &YSFlightSimulation::get_airplane_template_names);
@@ -188,6 +195,7 @@ void YSFlightSimulation::load_yfs(String file_path) {
     ysgd::load_rvb_roles("res://rvb_roles.txt");  // Before world->Load: the mission's AIs are wrapped while loading
     ysgd::reset_rvb_ai();
     ai_respawn.reset();
+    event_match.reset();
 
     ysgd::set_breadcrumb("load_yfs: LoadTemplateAll");
     ysgd::log_line("Calling world->LoadTemplateAll()...");
@@ -246,6 +254,7 @@ void YSFlightSimulation::_physics_process(double delta) {
         for (unsigned int key : ai_respawn.removed_keys()) {
             forget_airplane(key);
         }
+        event_match.update(world, sim, delta);
     }
     ysgd::set_breadcrumb("_physics_process: interpolation capture");
     interp.capture(sim);
@@ -421,6 +430,39 @@ void YSFlightSimulation::debug_kill_player() { ysgd::kill_player(sim); }
 void YSFlightSimulation::set_rvb_ai_enabled(bool enabled) { ysgd::set_rvb_ai_enabled(enabled); }
 void YSFlightSimulation::set_ai_respawn_enabled(bool enabled) { ai_respawn.set_enabled(enabled); }
 void YSFlightSimulation::set_ai_ground_ops(bool enabled) { ysgd::set_rvb_ground_ops(enabled); }
+
+// Works before any mission is loaded (the match builder): loads YS's aircraft templates and roles if needed.
+Array YSFlightSimulation::get_aircraft_catalog() {
+    if (world == nullptr) {
+        return Array();
+    }
+    if (world->GetAirplaneTemplateName(0) == nullptr) {
+        const String res_path = ProjectSettings::get_singleton()->globalize_path("res://");
+        _wchdir((const wchar_t *)res_path.utf16().get_data()); // YS reads its data relative to the project
+        ysgd::load_rvb_roles("res://rvb_roles.txt");
+        FsUseLocalFolderSetting();
+        world->LoadTemplateAll();
+    }
+    return ysgd::EventMatch::aircraft_catalog(world);
+}
+Dictionary YSFlightSimulation::get_event_state() const { return event_match.state(); }
+Dictionary YSFlightSimulation::get_event_results() const { return event_match.results(); }
+void YSFlightSimulation::event_end() { event_match.end_now(); }
+bool YSFlightSimulation::apply_player_loadout(String preset) { return ysgd::apply_player_loadout(sim, preset); }
+
+bool YSFlightSimulation::event_begin(Dictionary config) {
+    ai_respawn.set_enabled(false); // the event spawns and respawns its own pilots; wrecks are still cleaned up
+    return event_match.begin(world, sim, config);
+}
+
+void YSFlightSimulation::event_leave_jet() {
+    const unsigned int key = event_match.leave_player_jet(sim);
+    if (key != 0) {
+        telemetry_stamp = FrameStamp(); // the player aircraft is gone: drop this frame's cached queries
+        airplanes_stamp = FrameStamp();
+        forget_airplane(key);
+    }
+}
 
 Dictionary YSFlightSimulation::get_ai_state() {
     Dictionary d = ysgd::ai_state(sim);

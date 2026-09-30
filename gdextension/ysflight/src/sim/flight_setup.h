@@ -23,6 +23,10 @@ bool is_helicopter_template(FsWorld *world, const godot::String &airplane_name);
 bool respawn_player(FsWorld *world, FsSimulation *sim, const godot::String &airplane_name,
                     const godot::String &start_position, int64_t iff);
 // Test hook: same as a real shoot-down (spins down until impact).
+// Loadout presets for the player's aircraft (offline event spawn menu): "DEFAULT" (the .dat loadout, as
+// spawned), "AIR-TO-AIR" (air-to-air missiles only), "STRIKE" (no medium-range missiles), "GUNS ONLY".
+// Works on the aircraft's current stores via YS's own UNLOADWP / LOADWEPN commands.
+bool apply_player_loadout(FsSimulation *sim, const godot::String &preset);
 void kill_player(FsSimulation *sim);
 // Hands the player's aircraft to the AI (benchmark and --ai-player): the RvB AI if the aircraft has an
 // RvB role, else the YS dogfight AI.
