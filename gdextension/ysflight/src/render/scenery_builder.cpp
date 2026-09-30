@@ -1,5 +1,8 @@
 #include "render/scenery_builder.h"
 
+#include <cmath>
+#include <unordered_map>
+
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
@@ -13,7 +16,15 @@ namespace ysgd {
 
 namespace {
 
-// Triangles, lines and points of 2D drawings (maps and signboards). UV.x = layer index for depth biasing.
+constexpr double OUTSIDE_SEA_EXTENT_M = 250000.0; // the ring around the map reaches past the longest draw distance
+
+// Sea / lake colours (blue or teal, not grey or green): these flat map polygons get the water shading.
+bool is_water_colour(const Color &c) {
+    return c.b > c.r * 1.15f && c.b >= c.g * 0.85f && c.b > 0.2f;
+}
+
+// Triangles, lines and points of 2D drawings (maps and signboards). UV.x = layer index for depth biasing,
+// UV.y = 1 on flat water triangles (map_poly.gdshader).
 struct DrawingBuffers {
     PackedVector3Array tri_v, tri_n, line_v, pt_v;
     PackedColorArray tri_c, line_c, pt_c;
@@ -24,16 +35,17 @@ struct DrawingBuffers {
     void add_triangle(const Vector3 &p0, const Vector3 &p1, const Vector3 &p2, const Vector3 &n,
                       const Color &c0, const Color &c1, const Color &c2, const Vector2 &uv) {
         add_oriented_triangle(tri_v, tri_n, tri_c, p0, p1, p2, n, n, n, n, c0, c1, c2);
-        tri_uv.push_back(uv);
-        tri_uv.push_back(uv);
-        tri_uv.push_back(uv);
+        const Vector2 tuv(uv.x, (std::fabs(n.y) > 0.9f && is_water_colour(c0)) ? 1.0f : 0.0f);
+        tri_uv.push_back(tuv);
+        tri_uv.push_back(tuv);
+        tri_uv.push_back(tuv);
     }
     void add_line(const Vector3 &a, const Vector3 &b, const Color &c, const Vector2 &uv) {
         line_v.push_back(a); line_c.push_back(c); line_uv.push_back(uv);
         line_v.push_back(b); line_c.push_back(c); line_uv.push_back(uv);
     }
     void shift_layers(float shift) {
-        for (int i = 0; i < tri_uv.size(); ++i) tri_uv.set(i, Vector2(tri_uv[i].x + shift, 0.0f));
+        for (int i = 0; i < tri_uv.size(); ++i) tri_uv.set(i, Vector2(tri_uv[i].x + shift, tri_uv[i].y));
         for (int i = 0; i < line_uv.size(); ++i) line_uv.set(i, Vector2(line_uv[i].x + shift, 0.0f));
         for (int i = 0; i < pt_uv.size(); ++i) pt_uv.set(i, Vector2(pt_uv[i].x + shift, 0.0f));
     }
@@ -295,7 +307,12 @@ void build_recursive(const YsScenery *scn, const YsMatrix4x4 &parent_tfm, Node3D
     const YsListItem<YsSceneryShell> *shlItem = nullptr;
     while ((shlItem = scn->FindNextShell(shlItem)) != nullptr) {
         const YsSceneryShell &shlScn = shlItem->dat;
-        const Ref<ArrayMesh> mesh = meshes.get(shlScn.GetVisualShell());
+        const auto &shl = shlScn.GetVisualShell();
+        VertexShade shade; // baked darker base + occlusion (model_shading.h), once per shell
+        if (!meshes.has(shl)) {
+            shade = bake_shell_shade(shl);
+        }
+        const Ref<ArrayMesh> mesh = meshes.get(shl, &shade);
         if (mesh.is_valid() && mesh->get_surface_count() > 0) {
             const YsMatrix4x4 tfm = child_transform(scn_tfm, shlScn.GetPosition(), shlScn.GetAttitude());
             add_mesh_node(parent_node, mesh, ys_matrix_to_godot_transform(tfm));
@@ -322,17 +339,55 @@ void build_recursive(const YsScenery *scn, const YsMatrix4x4 &parent_tfm, Node3D
 
 } // namespace
 
-void build_scenery(const FsSimulation *sim, Node3D *root, const Materials &mats, ShellMeshCache &meshes) {
+// The world beyond the map: a flat ring at y = 0 from the edge of the map's box out past the draw distance,
+// in the map's dominant colour (island maps: the sea) with the map's own shader (lighting, water, cloud
+// shadows), so the edge doesn't show. No infinite plane: one at y = 0 would z-fight with the maps; the ring
+// never overlaps them. The depth fog fades it into the horizon haze (world/sky_environment.gd).
+static void add_outside_sea(Node3D *root, const AABB &map, const Color &colour, const Materials &mats) {
+    const float r = (float)OUTSIDE_SEA_EXTENT_M;
+    const float x0 = map.position.x, x1 = map.get_end().x, z0 = map.position.z, z1 = map.get_end().z;
+    const Vector3 quads[4][4] = { // around the hole: north / south full width, east / west between them
+        {Vector3(-r, 0, -r), Vector3(r, 0, -r), Vector3(r, 0, z0), Vector3(-r, 0, z0)},
+        {Vector3(-r, 0, z1), Vector3(r, 0, z1), Vector3(r, 0, r), Vector3(-r, 0, r)},
+        {Vector3(-r, 0, z0), Vector3(x0, 0, z0), Vector3(x0, 0, z1), Vector3(-r, 0, z1)},
+        {Vector3(x1, 0, z0), Vector3(r, 0, z0), Vector3(r, 0, z1), Vector3(x1, 0, z1)},
+    };
+    DrawingBuffers buf;
+    const Vector3 up(0.0f, 1.0f, 0.0f);
+    for (const auto &q : quads) {
+        buf.add_triangle(q[0], q[1], q[2], up, colour, colour, colour, Vector2());
+        buf.add_triangle(q[0], q[2], q[3], up, colour, colour, colour, Vector2());
+    }
+    MeshInstance3D *mi = memnew(MeshInstance3D);
+    mi->set_name("OutsideSea");
+    mi->set_mesh(buf.to_mesh(mats));
+    mi->set_cast_shadows_setting(GeometryInstance3D::SHADOW_CASTING_SETTING_OFF);
+    root->add_child(mi);
+}
+
+// Adds each map triangle's area to its (quantised) colour.
+static void accumulate_colour_areas(const DrawingBuffers &buf, std::unordered_map<uint32_t, double> &area_by_colour) {
+    for (int i = 0; i + 2 < buf.tri_v.size(); i += 3) {
+        const double area = 0.5 * (double)(buf.tri_v[i + 1] - buf.tri_v[i]).cross(buf.tri_v[i + 2] - buf.tri_v[i]).length();
+        const Color c = buf.tri_c[i];
+        const uint32_t key = ((uint32_t)(c.r * 63.0f) << 12) | ((uint32_t)(c.g * 63.0f) << 6) | (uint32_t)(c.b * 63.0f);
+        area_by_colour[key] += area;
+    }
+}
+
+Color build_scenery(const FsSimulation *sim, Node3D *root, const Materials &mats, ShellMeshCache &meshes) {
+    Color dominant(0.3f, 0.45f, 0.5f);
     if (sim == nullptr || root == nullptr) {
-        return;
+        return dominant;
     }
     const FsField *fsField = sim->GetField();
     if (fsField == nullptr || fsField->GetFieldPtr() == nullptr) {
-        return;
+        return dominant;
     }
+    std::unordered_map<uint32_t, double> area_by_colour;
+    AABB map_box;
+    bool have_map = false;
     const YsScenery *rootScn = fsField->GetFieldPtr();
-    // The infinite ground plane is the procedural sky's ground colour (main.gd), not a mesh: a mesh at
-    // y = 0 would z-fight with the maps and elevation grids.
 
     YsMatrix4x4 identity;
     identity.Initialize();
@@ -357,6 +412,11 @@ void build_scenery(const FsSimulation *sim, Node3D *root, const Materials &mats,
         // Shift to -N .. -1: later map layers (runways) win over earlier ones (grass), and 3D objects at
         // y = 0 (bias 0: wheels, TER bases, buildings) win over every map layer.
         buf.shift_layers(-(float)(elem_counter + 1));
+        accumulate_colour_areas(buf, area_by_colour);
+        for (int i = 0; i < buf.tri_v.size(); ++i) {
+            map_box = have_map ? map_box.expand(buf.tri_v[i]) : AABB(buf.tri_v[i], Vector3());
+            have_map = true;
+        }
         if (!buf.empty()) {
             MeshInstance3D *mi = memnew(MeshInstance3D);
             mi->set_name("MapGroup_" + String::num_int64(grpIdx));
@@ -366,7 +426,19 @@ void build_scenery(const FsSimulation *sim, Node3D *root, const Materials &mats,
     }
 
     build_recursive(rootScn, field_tfm, root, mats, meshes);
+
+    double best_area = 0.0;
+    for (const auto &kv : area_by_colour) {
+        if (kv.second > best_area) {
+            best_area = kv.second;
+            dominant = Color(((kv.first >> 12) & 63) / 63.0f, ((kv.first >> 6) & 63) / 63.0f, (kv.first & 63) / 63.0f);
+        }
+    }
+    if (have_map) {
+        add_outside_sea(root, map_box, dominant, mats);
+    }
     UtilityFunctions::print("YSFlight: Built scenery nodes for field successfully.");
+    return dominant;
 }
 
 } // namespace ysgd

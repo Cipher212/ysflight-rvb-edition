@@ -38,6 +38,11 @@ FsDogfight::FsDogfight()
 
 	nextTargetSearchTimer=0.0;
 
+	rvbGunRange=700.0;  // RvB (YSFlight RvB Edition, 2026-09-30)
+	rvbAamMask=7;
+	rvbPreferAim120=YSFALSE;
+	rvbExternalTarget=YSFALSE;
+
 	giveUpDist=20000.0;
 	cruiseAlt=YsUnitConv::FTtoM(30000.0);
 	cruiseAP=FsGotoPosition::Create();
@@ -272,6 +277,23 @@ YSRESULT FsDogfight::SearchTarget(FsAirplane &air,FsSimulation *sim)
 {
 	FsAirplane *trg;
 	YsVec3 tpos,pos;
+
+	// RvB: the owner picks targets on its own scan timer (YSFlight RvB Edition, 2026-09-30).
+	if(YSTRUE==rvbExternalTarget)
+	{
+		FsAirplane *cur=GetTarget(sim);
+		if(NULL!=cur && YSTRUE==CanBeTarget(&air,cur))
+		{
+			if(mode==DFMODE_NOTARGET)
+			{
+				mode=DFMODE_NORMAL;
+			}
+			GetRelativePosition(rel1,cur->GetPosition(),air,sim);
+			return YSOK;
+		}
+		mode=DFMODE_NOTARGET;
+		return YSERR;
+	}
 
 	trg=NULL;
 	targetAirplaneKey=YSNULLHASHKEY;
@@ -1384,7 +1406,7 @@ YSRESULT FsDogfight::ApplyControl(FsAirplane &air,FsSimulation *sim,const double
 						//	target is between 0 and 400m in front of AI aircraft
 						//  relative angle is less than relative size (little to no deviation from boresight direction)
 						//	"dontFire" flag is not set
-						if(0.0<rel1.z() && rel1.z()<700.0 && relAng<relSize && dontFire!=YSTRUE)
+						if(0.0<rel1.z() && rel1.z()<rvbGunRange && relAng<relSize && dontFire!=YSTRUE)  // RvB: was 700.0
 						{
 							air.Prop().SetFireGunButton(YSTRUE);
 						}
@@ -1416,8 +1438,15 @@ YSRESULT FsDogfight::ApplyControl(FsAirplane &air,FsSimulation *sim,const double
 						//target relative squared distance
 						sqDist=rel1.GetSquareLength();
 
+						// RvB: allowed missiles and AIM-120 preference (YSFlight RvB Edition, 2026-09-30).
+						const YSBOOL canShort=(0!=(rvbAamMask&(FSWEAPON_AIM9X==shortRangeType ? 2 : 1)) ? YSTRUE : YSFALSE);
+						const YSBOOL canLong=(0!=(rvbAamMask&4) ? YSTRUE : YSFALSE);
+						const YSBOOL inLongRange=((aim9Range*aim9Range)/9.0<sqDist && sqDist<aim120Range*aim120Range ? YSTRUE : YSFALSE);
+						const YSBOOL longFirst=(YSTRUE==rvbPreferAim120 && YSTRUE==canLong && YSTRUE==inLongRange &&
+						                        0<air.Prop().GetNumWeapon(FSWEAPON_AIM120) ? YSTRUE : YSFALSE);
+
 						//if target is facing away and within AIM-9/9x range
-						if(tRFv.z()>0.0 && sqDist<aim9Range*aim9Range)
+						if(YSTRUE!=longFirst && YSTRUE==canShort && tRFv.z()>0.0 && sqDist<aim9Range*aim9Range)
 						{
 							FsExistence *target,*targetNew;
 							target=sim->FindAirplane(air.Prop().GetAirTargetKey());
@@ -1461,7 +1490,7 @@ YSRESULT FsDogfight::ApplyControl(FsAirplane &air,FsSimulation *sim,const double
 							}
 						}
 						//check condition for firing long range AAM based on target squared distance
-						else if((aim9Range*aim9Range)/9.0<sqDist && sqDist<aim120Range*aim120Range)
+						else if(YSTRUE==canLong && YSTRUE==inLongRange)
 						{
 							FsExistence *target,*targetNew;
 

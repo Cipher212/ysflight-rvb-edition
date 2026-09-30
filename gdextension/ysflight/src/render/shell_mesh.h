@@ -9,6 +9,7 @@
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 
 #include "render/materials.h"
+#include "render/model_shading.h"
 
 class YsShellExt;
 
@@ -21,7 +22,9 @@ class ShellMeshCache {
 public:
     explicit ShellMeshCache(const Materials &materials) : mats(materials) {}
 
-    godot::Ref<godot::ArrayMesh> get(const YsShellExt &shell);
+    // shade: baked brightness per vertex (model_shading.h), applied the first time a shell is converted.
+    godot::Ref<godot::ArrayMesh> get(const YsShellExt &shell, const VertexShade *shade = nullptr);
+    bool has(const YsShellExt &shell) const { return cache.count(static_cast<const void *>(&shell)) != 0; }
     void clear() { cache.clear(); }
     size_t size() const { return cache.size(); }
 

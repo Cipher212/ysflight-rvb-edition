@@ -58,10 +58,11 @@ func random() -> RandomNumberGenerator:
 	return _rng
 
 # vel: start velocity (horizontal part slows down). heat > 0 adds a fire glow that cools in the first third.
-func spawn(pos: Vector3, vel: Vector3, size0: float, size1: float, life: float, color: Color, heat: float = 0.0) -> void:
+# grey_out 0..1: how far the colour drifts towards light grey by the end of the puff's life.
+func spawn(pos: Vector3, vel: Vector3, size0: float, size1: float, life: float, color: Color, heat: float = 0.0, grey_out: float = 0.0) -> void:
 	var slot := _head
 	_head = (_head + 1) % _mm.instance_count
 	spawned += 1
 	_mm.set_instance_transform(slot, Transform3D(Basis(vel, Vector3(size0, size1, maxf(life, 0.1)), Vector3(_time, 0.0, 0.0)), pos))
 	_mm.set_instance_color(slot, color)
-	_mm.set_instance_custom_data(slot, Color(heat, 0.0, 0.0, 0.0))
+	_mm.set_instance_custom_data(slot, Color(heat, grey_out, 0.0, 0.0))

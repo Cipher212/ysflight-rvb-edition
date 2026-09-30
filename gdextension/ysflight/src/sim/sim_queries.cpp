@@ -14,6 +14,7 @@ namespace {
 
 constexpr double MS_TO_KT = 1.94384449;
 constexpr double M_TO_FT = 3.2808399;
+constexpr double NM_TO_M = 1852.0;
 
 void fill_ground_state(Dictionary &state, FsGround *gnd, const MotionInterp &interp) {
     const Transform3D t = interp.gnd(gnd);
@@ -47,7 +48,9 @@ void fill_weapon_telemetry(Dictionary &dict, FsAirplane *player) {
     dict["locked_ground_target_key"] = (gnd_tgt != YSNULLHASHKEY) ? (int64_t)gnd_tgt : (int64_t)-1;
     dict["aam_range"] = (double)prop.GetAAMRange(woc);
     dict["agm_range"] = (double)prop.GetAGMRange();
-    dict["radar_range"] = (double)prop.GetCurrentRadarRange();
+    // YS radar range is in nautical miles (0 = off / inoperative)
+    dict["radar_range_nm"] = (double)prop.GetCurrentRadarRange();
+    dict["radar_range"] = (double)prop.GetCurrentRadarRange() * NM_TO_M; // metres
 }
 
 } // namespace
@@ -235,15 +238,6 @@ Color sky_color(FsSimulation *sim) {
         return ys_to_godot_color(sky);
     }
     return Color(0.4f, 0.6f, 0.9f);
-}
-
-Color ground_color(FsSimulation *sim) {
-    if (sim != nullptr && sim->GetField() != nullptr) {
-        YsColor gnd, sky;
-        sim->GetField()->GetGroundSkyColor(gnd, sky);
-        return ys_to_godot_color(gnd);
-    }
-    return Color(0.2f, 0.5f, 0.2f);
 }
 
 } // namespace ysgd

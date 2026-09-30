@@ -11,11 +11,13 @@
 
 #include "bridge/aircraft_fx_query.h"
 #include "bridge/audio_bridge.h"
+#include "render/aircraft_shadows.h"
 #include "render/materials.h"
 #include "render/shell_mesh.h"
 #include "render/trail_renderer.h"
 #include "render/visual_sync.h"
 #include "render/weapon_fx_renderer.h"
+#include "sim/ai_respawn.h"
 #include "sim/motion_interp.h"
 
 class FsWorld;
@@ -45,7 +47,7 @@ public:
     Dictionary get_player_telemetry();
     PackedVector3Array get_tower_positions() const;
     Color get_sky_color() const;
-    Color get_ground_color() const;
+    Color get_map_base_color() const;  // the map's dominant colour by area (island maps: the sea)
 
     // Benchmark / diagnostics
     PackedFloat64Array get_frame_stats();
@@ -55,6 +57,13 @@ public:
     void set_random_seed(int64_t seed);
     bool enable_player_autopilot();
     void debug_kill_player(); // test hook: the player aircraft is shot down
+
+    // RvB tactical AI (ysce/src/autopilot/fsrvb*.cpp, sim/ai_setup, sim/ai_respawn)
+    void set_rvb_ai_enabled(bool enabled);      // before load_yfs; false = stock YS AI (--stock-ai)
+    void set_ai_respawn_enabled(bool enabled);
+    void set_ai_ground_ops(bool enabled);       // archived RTB / landing / taxi (--ai-ground-ops)
+    Dictionary get_ai_state();
+    void set_sim_speed(int64_t steps_per_tick);  // AI soak runs only: >1 runs the sim faster than real time
 
     // Flight setup / respawn
     PackedStringArray get_airplane_template_names() const;
@@ -67,6 +76,7 @@ public:
     void set_radar_mode(int64_t mode);
     Dictionary get_aircraft_fx_state();
     void set_effects_quality(int64_t quality); // 0 low, 1 medium, 2 high (trails)
+    void set_aircraft_shadows_enabled(bool enabled); // Graphics setting (render/aircraft_shadows.h)
     PackedInt32Array get_effects_stats() const; // [trail segments, trails, tracers, glows]
 
     // Controls
@@ -94,6 +104,7 @@ private:
     FrameStamp current_stamp() const;
     void reset_scene_roots();
     void write_heartbeat();
+    void forget_airplane(unsigned int key);
 
     FsWorld *world = nullptr;
     FsSimulation *sim = nullptr;
@@ -107,12 +118,16 @@ private:
     ysgd::Materials materials;
     ysgd::ShellMeshCache mesh_cache{materials};
     ysgd::VisualSync visual_sync{materials, mesh_cache};
+    ysgd::AircraftShadows shadows;
     ysgd::MotionInterp interp;
     ysgd::AudioBridge audio;
     ysgd::AircraftFxTracker aircraft_fx;
     ysgd::TrailRenderer trails;
     ysgd::WeaponFxRenderer weapon_fx;
+    ysgd::AiRespawn ai_respawn;
+    int sim_speed = 1;
     int radar_mode = 0; // 0 = every aircraft within range; 1 = nose cone only (see radar_query.h)
+    Color map_base_color = Color(0.3f, 0.45f, 0.5f);
 
     Dictionary cached_telemetry;
     FrameStamp telemetry_stamp;

@@ -18,17 +18,20 @@ extends Node3D
 const OVER_G_LIMIT: float = 11.0
 
 # Distance falloff (Godot inverse-distance model: full volume, capped at +3 dB, out to UNIT_SIZE, then
-# -6 dB per doubling of distance). Jets are very loud: engines stay at full volume for the first ~250 m
-# and carry for kilometres in exterior views. In the cockpit, other aircraft are pushed down on the
-# "Others" bus instead (helmet + your own engine), see INTERIOR_OTHERS_DB in audio/audio_buses.gd.
-const ENGINE_UNIT_SIZE: float = 250.0
-const ENGINE_MAX_DISTANCE: float = 8000.0
-const GUN_UNIT_SIZE: float = 120.0
-const GUN_MAX_DISTANCE: float = 3000.0
-const LAUNCH_UNIT_SIZE: float = 150.0
-const LAUNCH_MAX_DISTANCE: float = 3000.0
-const EXPLOSION_UNIT_SIZE: float = 300.0
-const EXPLOSION_MAX_DISTANCE: float = 2500.0 # user rule: instant up to ~2.5 km, silent beyond
+# -6 dB per doubling of distance, silent past MAX_DISTANCE). Jets are very loud: engines stay at full
+# volume for the first ~600 m and are still clearly audible at 5 km (-18 dB) in exterior views.
+# In the cockpit, other aircraft are pushed down on the "Others" bus instead (helmet + your own engine),
+# see INTERIOR_OTHERS_DB in audio/audio_buses.gd.
+# 2026-09-30 user: drop-off still too steep -> unit sizes and ranges raised (were 250 m / 8 km engines,
+# 300 m / 2.5 km explosions, 120 m / 3 km guns, 150 m / 3 km launches). Explosions are still instant.
+const ENGINE_UNIT_SIZE: float = 600.0
+const ENGINE_MAX_DISTANCE: float = 15000.0
+const GUN_UNIT_SIZE: float = 250.0
+const GUN_MAX_DISTANCE: float = 5000.0
+const LAUNCH_UNIT_SIZE: float = 300.0
+const LAUNCH_MAX_DISTANCE: float = 6000.0
+const EXPLOSION_UNIT_SIZE: float = 1000.0
+const EXPLOSION_MAX_DISTANCE: float = 10000.0
 const PLAYER_EVENT_UNIT_SIZE: float = 40.0
 
 # Engine spool lag. YS lets throttle jump 100% -> 0% instantly; the sound follows with turbine-like

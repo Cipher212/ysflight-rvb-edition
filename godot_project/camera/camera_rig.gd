@@ -25,6 +25,14 @@ const ACTION_MOUNTS := [
 const DEFAULT_COCKPIT_FOV := 65.0
 const DEFAULT_CAM_PITCH := -0.18
 
+# Pilot head under G (cockpit view only, setting "cockpit_head_movement"): the eye sinks linearly from 0 at
+# 1 G to HEAD_DROP_AT_9G_M at +9 G (rises at most HEAD_RISE_MAX_M under negative G), and the head tilts
+# down a little (neck flexion). Follows the G load with a HEAD_LAG_S time constant so it lags the stick.
+const HEAD_DROP_AT_9G_M := 0.025
+const HEAD_RISE_MAX_M := 0.010
+const HEAD_TILT_AT_9G_DEG := -1.25
+const HEAD_LAG_S := 0.2
+
 var camera: Camera3D = null
 var mode: int = CamMode.HORIZON_CHASE
 var status_text: String = ""
@@ -46,11 +54,16 @@ var _locked_basis_valid := false
 var _flyby_pos := Vector3.ZERO
 var _flyby_valid := false
 var _flyby_side: float = 1.0
-var _padlock_index: int = 0
-var _spectator_index: int = 0
+# F5 / F6 targets are locked by aircraft key: deaths and respawns never switch the camera to another jet.
+var _padlock_key: int = -1
+var _spectator_key: int = -1
+var _pending_step := {} # mode -> step from F5/F6 repeat or Tab / [ ] (applied with the next frame's list)
+var _held_pos := Vector3.ZERO # last position of an F6 target that is gone (the camera holds there)
 var _tower_index: int = 0
 var _tower_zoom: float = 1.0
 var _mount_index: int = 0
+var _head_drop: float = 0.0 # metres along the aircraft's up axis (negative = down)
+var _head_tilt: float = 0.0 # radians of extra pitch (negative = nose-down)
 
 # ai_mode: the AI flies the player jet. benchmark: no camera input at all (fixed camera script).
 func setup(sim: YSFlightSimulation, controls: Node, ai_mode: bool, benchmark: bool) -> void:
@@ -67,14 +80,21 @@ func setup(sim: YSFlightSimulation, controls: Node, ai_mode: bool, benchmark: bo
 func is_cockpit() -> bool:
 	return mode == CamMode.COCKPIT
 
+# The camera rides with the player's jet (not fly-by, spectator or tower): airflow effects apply.
+func is_at_player() -> bool:
+	return mode in [CamMode.COCKPIT, CamMode.HORIZON_CHASE, CamMode.LOCKED_TAIL, CamMode.PADLOCK_THREAT,
+		CamMode.ACTION_MOUNT]
+
 # A new player aircraft (respawn): modes that keep state from the previous jet start fresh.
 func reset_for_new_aircraft() -> void:
 	_locked_basis_valid = false
 	_flyby_valid = false
+	_reset_head()
 
 func set_mode(new_mode: int, same_key_pressed: bool = false) -> void:
 	var prev := mode
 	mode = new_mode
+	_reset_head() # every camera cut starts with the head centred
 	var cockpit := mode == CamMode.COCKPIT
 	_sim.set_cockpit_cull_mode(cockpit)
 	if cockpit:
@@ -99,12 +119,9 @@ func set_mode(new_mode: int, same_key_pressed: bool = false) -> void:
 				cam_pitch = -0.12
 		CamMode.FLY_BY:
 			_flyby_valid = false # every F4 press sets up a fresh fly-by
-		CamMode.PADLOCK_THREAT:
+		CamMode.PADLOCK_THREAT, CamMode.SPECTATOR_AI:
 			if same_key_pressed:
-				_padlock_index += 1
-		CamMode.SPECTATOR_AI:
-			if same_key_pressed:
-				_spectator_index += 1
+				_pending_step[mode] = 1
 		CamMode.TOWER:
 			if prev != CamMode.TOWER:
 				_select_nearest_tower()
@@ -160,15 +177,17 @@ func _unhandled_input(event: InputEvent) -> void:
 func _cycle_target(step: int) -> void:
 	match mode:
 		CamMode.PADLOCK_THREAT:
-			_padlock_index = maxi(0, _padlock_index + step)
+			_pending_step[mode] = step
 		CamMode.TOWER:
 			_tower_index = maxi(0, _tower_index + step)
 		CamMode.ACTION_MOUNT:
 			_mount_index = (_mount_index + step + ACTION_MOUNTS.size()) % ACTION_MOUNTS.size()
 		_:
-			_spectator_index = maxi(0, _spectator_index + step)
-			if step > 0 and mode != CamMode.SPECTATOR_AI:
+			if mode != CamMode.SPECTATOR_AI:
 				set_mode(CamMode.SPECTATOR_AI)
+				if _spectator_key >= 0:
+					return # The first Tab only switches to F6 on the current target
+			_pending_step[CamMode.SPECTATOR_AI] = step
 
 # Player camera input (normal play): zoom keys, head look (cockpit) and orbit (exterior) from the look keys,
 # the gamepad right stick or a joystick hat.
@@ -267,8 +286,10 @@ func update(delta: float, player_tfm: Transform3D, tel: Dictionary, airplanes: D
 	match mode:
 		CamMode.COCKPIT:
 			camera.fov = cockpit_fov
-			camera.global_position = player_tfm * (tel.get("cockpit_local", Vector3(0.0, 0.9, -3.15)) as Vector3)
-			camera.global_basis = (player_tfm.basis * Basis.from_euler(Vector3(head_pitch, head_yaw, 0.0))).orthonormalized()
+			_update_head(delta, float(tel.get("g_force", 1.0)))
+			var eye: Vector3 = (tel.get("cockpit_local", Vector3(0.0, 0.9, -3.15)) as Vector3) + Vector3(0.0, _head_drop, 0.0)
+			camera.global_position = player_tfm * eye
+			camera.global_basis = (player_tfm.basis * Basis.from_euler(Vector3(head_pitch + _head_tilt, head_yaw, 0.0))).orthonormalized()
 			status_text = "F1: COCKPIT VIEW (FOV %d°)" % int(round(cockpit_fov))
 		CamMode.HORIZON_CHASE:
 			camera.global_position = player_pos + _orbit_offset(player_tfm.basis)
@@ -285,11 +306,11 @@ func update(delta: float, player_tfm: Transform3D, tel: Dictionary, airplanes: D
 		CamMode.FLY_BY:
 			_update_flyby(player_tfm, tel.get("velocity", -player_tfm.basis.z * 100.0))
 		CamMode.PADLOCK_THREAT:
-			var targets := _other_airplanes(airplanes, player_iff)
-			if targets.is_empty():
-				_fallback_view(player_pos, "F5: PADLOCK [NO ACTIVE TARGETS]")
+			_padlock_key = _locked_target(CamMode.PADLOCK_THREAT, _padlock_key, airplanes, player_iff)
+			if not airplanes.has(_padlock_key) or not bool(airplanes[_padlock_key].get("is_alive", true)):
+				_fallback_view(player_pos, "F5: PADLOCK [NO TARGET - Tab / [ ] for next]")
 			else:
-				var tgt: Dictionary = targets[_padlock_index % targets.size()]
+				var tgt: Dictionary = airplanes[_padlock_key]
 				var tgt_pos: Vector3 = tgt["pos"]
 				var to_tgt := tgt_pos - player_pos
 				var dist_m := to_tgt.length()
@@ -297,15 +318,20 @@ func update(delta: float, player_tfm: Transform3D, tel: Dictionary, airplanes: D
 				_look_at(tgt_pos, Vector3.UP)
 				status_text = "F5: PADLOCK [%s: %s | %.1f km]" % [_side_name(tgt, player_iff), tgt.get("identifier", "TARGET"), dist_m / 1000.0]
 		CamMode.SPECTATOR_AI:
-			var others := _other_airplanes(airplanes, player_iff)
-			if others.is_empty():
-				_fallback_view(player_pos, "F6: SPECTATOR [NO AI AIRCRAFT]")
+			_spectator_key = _locked_target(CamMode.SPECTATOR_AI, _spectator_key, airplanes, player_iff)
+			if not airplanes.has(_spectator_key) or not bool(airplanes[_spectator_key].get("is_alive", true)):
+				# Target destroyed: hold where it was until the user picks the next one.
+				camera.global_position = _held_pos + _orbit_offset(Basis.IDENTITY)
+				_look_at(_held_pos, Vector3.UP)
+				status_text = "F6: SPECTATOR [TARGET GONE - Tab / [ ] for next]"
 			else:
-				var st: Dictionary = others[_spectator_index % others.size()]
+				var st: Dictionary = airplanes[_spectator_key]
 				var t: Transform3D = st["transform"]
+				_held_pos = t.origin
 				camera.global_position = t.origin + _orbit_offset(t.basis)
 				_look_at(t.origin, Vector3.UP)
-				status_text = "F6: SPECTATOR [%d/%d %s: %s]" % [(_spectator_index % others.size()) + 1, others.size(),
+				var keys := _other_keys(airplanes, player_iff)
+				status_text = "F6: SPECTATOR [%d/%d %s: %s]" % [keys.find(_spectator_key) + 1, keys.size(),
 					_side_name(st, player_iff), st.get("identifier", "AI")]
 		CamMode.TOWER:
 			_update_tower(player_pos)
@@ -315,6 +341,21 @@ func update(delta: float, player_tfm: Transform3D, tel: Dictionary, airplanes: D
 			camera.global_position = player_tfm * (mount["pos"] as Vector3)
 			_look_at(player_tfm * (mount["look_target"] as Vector3), player_tfm.basis.y)
 			status_text = "F8: ACTION MOUNT [%s]" % mount["name"]
+
+func _update_head(delta: float, g: float) -> void:
+	if _controls == null or not bool(_controls.get_value("cockpit_head_movement", true)):
+		_reset_head()
+		return
+	var g_load: float = (g - 1.0) / 8.0 # 0 at 1 G, 1 at +9 G
+	var target_drop: float = clampf(-g_load * HEAD_DROP_AT_9G_M, -HEAD_DROP_AT_9G_M, HEAD_RISE_MAX_M)
+	var target_tilt: float = deg_to_rad(HEAD_TILT_AT_9G_DEG) * clampf(g_load, 0.0, 1.0)
+	var k: float = 1.0 - exp(-delta / HEAD_LAG_S)
+	_head_drop += (target_drop - _head_drop) * k
+	_head_tilt += (target_tilt - _head_tilt) * k
+
+func _reset_head() -> void:
+	_head_drop = 0.0
+	_head_tilt = 0.0
 
 # Orbit offset around an aircraft whose roll is ignored (horizon-stable chase).
 func _orbit_offset(aircraft_basis: Basis) -> Vector3:
@@ -370,17 +411,36 @@ func _fallback_view(player_pos: Vector3, text: String) -> void:
 	status_text = text
 
 # Alive non-player aircraft, enemies first.
-func _other_airplanes(airplanes: Dictionary, player_iff: int) -> Array:
+# Live aircraft other than the player: enemies first, each side in key order (stable while jets come and go).
+func _other_keys(airplanes: Dictionary, player_iff: int) -> Array:
 	var enemies: Array = []
 	var friends: Array = []
-	for st in airplanes.values():
+	for key in airplanes.keys():
+		var st: Dictionary = airplanes[key]
 		if st.get("is_player", false) or not st.get("is_alive", true):
 			continue
 		if int(st.get("iff", -1)) != player_iff:
-			enemies.append(st)
+			enemies.append(key)
 		else:
-			friends.append(st)
+			friends.append(key)
+	enemies.sort()
+	friends.sort()
 	return enemies + friends
+
+# The locked target key: kept until the user steps (Tab / [ ] / the same F-key again). The first one is
+# picked automatically only when nothing was chosen yet.
+func _locked_target(for_mode: int, key: int, airplanes: Dictionary, player_iff: int) -> int:
+	var step: int = _pending_step.get(for_mode, 0)
+	_pending_step.erase(for_mode)
+	if step == 0 and key >= 0:
+		return key
+	var keys := _other_keys(airplanes, player_iff)
+	if keys.is_empty():
+		return key
+	var i := keys.find(key)
+	if i < 0:
+		return keys[0] if step >= 0 else keys[keys.size() - 1]
+	return keys[(i + step + keys.size()) % keys.size()]
 
 func _side_name(st: Dictionary, player_iff: int) -> String:
 	return "BANDIT" if int(st.get("iff", -1)) != player_iff else "ALLY"

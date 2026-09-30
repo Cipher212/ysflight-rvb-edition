@@ -12,7 +12,8 @@ namespace ysgd {
 
 // Builds the static field (.fld) under root: map layers (PC2) as one mesh per same-plane group in YS
 // painter's order, elevation grids (TER), 3D shells (SRF) and signboards (PLT), recursing into sub-fields.
-void build_scenery(const FsSimulation *sim, godot::Node3D *root, const Materials &mats, ShellMeshCache &meshes);
+// Returns the map's dominant colour by area (on island maps: the sea), used for the ground beyond the map.
+godot::Color build_scenery(const FsSimulation *sim, godot::Node3D *root, const Materials &mats, ShellMeshCache &meshes);
 
 } // namespace ysgd
 

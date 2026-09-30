@@ -12,6 +12,8 @@
 #include "fsfield.h"
 #include "fsvisual.h"
 #include "fsdogfightautopilot.h"
+#include "fsrvbtacticalautopilot.h"
+#include "fsrvbteampicture.h"
 #include "fsairsoundbridge.h"
 #include "ysscenery.h"
 

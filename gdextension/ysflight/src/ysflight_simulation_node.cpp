@@ -17,6 +17,7 @@
 #include "core/ys_convert.h"
 #include "core/ys_headers.h"
 #include "render/scenery_builder.h"
+#include "sim/ai_setup.h"
 #include "sim/flight_setup.h"
 #include "sim/player_input.h"
 #include "sim/sim_queries.h"
@@ -80,7 +81,7 @@ void YSFlightSimulation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_player_telemetry"), &YSFlightSimulation::get_player_telemetry);
     ClassDB::bind_method(D_METHOD("get_tower_positions"), &YSFlightSimulation::get_tower_positions);
     ClassDB::bind_method(D_METHOD("get_sky_color"), &YSFlightSimulation::get_sky_color);
-    ClassDB::bind_method(D_METHOD("get_ground_color"), &YSFlightSimulation::get_ground_color);
+    ClassDB::bind_method(D_METHOD("get_map_base_color"), &YSFlightSimulation::get_map_base_color);
     ClassDB::bind_method(D_METHOD("get_frame_stats"), &YSFlightSimulation::get_frame_stats);
     ClassDB::bind_method(D_METHOD("get_audio_state"), &YSFlightSimulation::get_audio_state);
     ClassDB::bind_method(D_METHOD("reset_interpolation"), &YSFlightSimulation::reset_interpolation);
@@ -88,6 +89,11 @@ void YSFlightSimulation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_random_seed", "seed"), &YSFlightSimulation::set_random_seed);
     ClassDB::bind_method(D_METHOD("enable_player_autopilot"), &YSFlightSimulation::enable_player_autopilot);
     ClassDB::bind_method(D_METHOD("debug_kill_player"), &YSFlightSimulation::debug_kill_player);
+    ClassDB::bind_method(D_METHOD("set_rvb_ai_enabled", "enabled"), &YSFlightSimulation::set_rvb_ai_enabled);
+    ClassDB::bind_method(D_METHOD("set_ai_respawn_enabled", "enabled"), &YSFlightSimulation::set_ai_respawn_enabled);
+    ClassDB::bind_method(D_METHOD("set_ai_ground_ops", "enabled"), &YSFlightSimulation::set_ai_ground_ops);
+    ClassDB::bind_method(D_METHOD("get_ai_state"), &YSFlightSimulation::get_ai_state);
+    ClassDB::bind_method(D_METHOD("set_sim_speed", "steps_per_tick"), &YSFlightSimulation::set_sim_speed);
     ClassDB::bind_method(D_METHOD("get_airplane_template_names"), &YSFlightSimulation::get_airplane_template_names);
     ClassDB::bind_method(D_METHOD("get_start_position_names"), &YSFlightSimulation::get_start_position_names);
     ClassDB::bind_method(D_METHOD("is_helicopter_template", "airplane_name"), &YSFlightSimulation::is_helicopter_template);
@@ -96,6 +102,7 @@ void YSFlightSimulation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_radar_mode", "mode"), &YSFlightSimulation::set_radar_mode);
     ClassDB::bind_method(D_METHOD("get_aircraft_fx_state"), &YSFlightSimulation::get_aircraft_fx_state);
     ClassDB::bind_method(D_METHOD("set_effects_quality", "quality"), &YSFlightSimulation::set_effects_quality);
+    ClassDB::bind_method(D_METHOD("set_aircraft_shadows_enabled", "enabled"), &YSFlightSimulation::set_aircraft_shadows_enabled);
     ClassDB::bind_method(D_METHOD("get_effects_stats"), &YSFlightSimulation::get_effects_stats);
     ClassDB::bind_method(D_METHOD("set_cockpit_cull_mode", "enabled"), &YSFlightSimulation::set_cockpit_cull_mode);
     ClassDB::bind_method(D_METHOD("set_player_flight_inputs", "elevator", "aileron", "rudder", "throttle", "afterburner", "trim"),
@@ -155,6 +162,7 @@ void YSFlightSimulation::reset_scene_roots() {
     effects_root = make_root(this, "EffectsRoot");
     mesh_cache.clear();
     visual_sync.attach(airplanes_root, grounds_root, weapons_root);
+    shadows.attach(effects_root);
     trails.attach(effects_root);
     weapon_fx.attach(effects_root);
     audio.reset();
@@ -177,6 +185,10 @@ void YSFlightSimulation::load_yfs(String file_path) {
     const String res_path = ProjectSettings::get_singleton()->globalize_path("res://");
     _wchdir((const wchar_t *)res_path.utf16().get_data());
 
+    ysgd::load_rvb_roles("res://rvb_roles.txt");  // Before world->Load: the mission's AIs are wrapped while loading
+    ysgd::reset_rvb_ai();
+    ai_respawn.reset();
+
     ysgd::set_breadcrumb("load_yfs: LoadTemplateAll");
     ysgd::log_line("Calling world->LoadTemplateAll()...");
     FsUseLocalFolderSetting();
@@ -198,9 +210,10 @@ void YSFlightSimulation::load_yfs(String file_path) {
     ysgd::set_breadcrumb("load_yfs: PrepareSimulation");
     world->PrepareSimulation();
     sim = world->GetSimulation();
+    ysgd::feed_start_runways(world, sim);
 
     ysgd::set_breadcrumb("load_yfs: build_scenery");
-    ysgd::build_scenery(sim, scenery_root, materials, mesh_cache);
+    map_base_color = ysgd::build_scenery(sim, scenery_root, materials, mesh_cache);
     visual_sync.build_prewarm(scenery_root);
     interp.reset(sim);
 
@@ -226,7 +239,14 @@ void YSFlightSimulation::_physics_process(double delta) {
     // so catch-up ticks (several per frame when FPS drops) stay cheap.
     const auto t0 = Clock::now();
     ysgd::set_breadcrumb("_physics_process: SimulateOneStep");
-    world->SimulateOneStep(delta, YSFALSE, YSFALSE, YSFALSE, YSFALSE, FSUSC_SCRIPT, YSFALSE);
+    for (int step = 0; step < sim_speed; ++step) {
+        world->SimulateOneStep(delta, YSFALSE, YSFALSE, YSFALSE, YSFALSE, FSUSC_SCRIPT, YSFALSE);
+        ysgd::set_breadcrumb("_physics_process: AI respawn");
+        ai_respawn.update(world, sim, delta);
+        for (unsigned int key : ai_respawn.removed_keys()) {
+            forget_airplane(key);
+        }
+    }
     ysgd::set_breadcrumb("_physics_process: interpolation capture");
     interp.capture(sim);
     ysgd::set_breadcrumb("_physics_process: trail record");
@@ -262,6 +282,7 @@ void YSFlightSimulation::_process(double delta) {
     const auto t0 = Clock::now();
     ysgd::set_breadcrumb("_process: visual sync");
     visual_sync.sync(sim, interp, camera_pos);
+    shadows.sync(sim, interp, camera_pos);
     const double sync_ms = ms_since(t0);
     perf_sync_sum += sync_ms;
     perf_sync_max = sync_ms > perf_sync_max ? sync_ms : perf_sync_max;
@@ -366,7 +387,7 @@ Array YSFlightSimulation::get_active_weapons() const { return ysgd::active_weapo
 Array YSFlightSimulation::get_active_explosions() const { return ysgd::active_explosions(sim); }
 PackedVector3Array YSFlightSimulation::get_tower_positions() const { return ysgd::tower_positions(sim); }
 Color YSFlightSimulation::get_sky_color() const { return ysgd::sky_color(sim); }
-Color YSFlightSimulation::get_ground_color() const { return ysgd::ground_color(sim); }
+Color YSFlightSimulation::get_map_base_color() const { return map_base_color; }
 
 Transform3D YSFlightSimulation::get_player_transform() const {
     if (sim != nullptr && sim->GetPlayerAirplane() != nullptr) {
@@ -380,6 +401,7 @@ Dictionary YSFlightSimulation::get_radar_contacts(double range_m) { return ysgd:
 void YSFlightSimulation::set_radar_mode(int64_t mode) { radar_mode = (int)mode; }
 Dictionary YSFlightSimulation::get_aircraft_fx_state() { return aircraft_fx.collect(sim, interp); }
 void YSFlightSimulation::set_effects_quality(int64_t quality) { trails.set_quality((int)quality); }
+void YSFlightSimulation::set_aircraft_shadows_enabled(bool enabled) { shadows.set_enabled(enabled); }
 
 PackedInt32Array YSFlightSimulation::get_effects_stats() const {
     PackedInt32Array out;
@@ -396,6 +418,37 @@ void YSFlightSimulation::set_interpolation_enabled(bool enabled) { interp.set_en
 void YSFlightSimulation::set_random_seed(int64_t seed) { srand((unsigned int)seed); }
 bool YSFlightSimulation::enable_player_autopilot() { return ysgd::enable_player_autopilot(sim); }
 void YSFlightSimulation::debug_kill_player() { ysgd::kill_player(sim); }
+void YSFlightSimulation::set_rvb_ai_enabled(bool enabled) { ysgd::set_rvb_ai_enabled(enabled); }
+void YSFlightSimulation::set_ai_respawn_enabled(bool enabled) { ai_respawn.set_enabled(enabled); }
+void YSFlightSimulation::set_ai_ground_ops(bool enabled) { ysgd::set_rvb_ground_ops(enabled); }
+
+Dictionary YSFlightSimulation::get_ai_state() {
+    Dictionary d = ysgd::ai_state(sim);
+    d["respawned"] = ai_respawn.respawned();
+    d["wrecks_removed"] = ai_respawn.wrecks_removed();
+    Dictionary cause, task;
+    for (const auto &kv : ai_respawn.deaths_by_cause()) {
+        cause[String(kv.first.c_str())] = kv.second;
+    }
+    for (const auto &kv : ai_respawn.deaths_by_task()) {
+        task[String(kv.first.c_str())] = kv.second;
+    }
+    d["deaths_by_cause"] = cause;
+    d["deaths_by_task"] = task;
+    d["aircraft"] = ysgd::ai_aircraft_list(sim);
+    return d;
+}
+
+void YSFlightSimulation::set_sim_speed(int64_t steps_per_tick) {
+    sim_speed = (int)(steps_per_tick < 1 ? 1 : (steps_per_tick > 16 ? 16 : steps_per_tick));
+}
+
+void YSFlightSimulation::forget_airplane(unsigned int key) {
+    visual_sync.forget_airplane(key);
+    shadows.forget_airplane(key);
+    interp.forget_air(key);
+    aircraft_fx.forget(key);
+}
 
 // ----------------------------------------------------------------------------------------------------------
 // Flight setup (sim/flight_setup.cpp) and controls (sim/player_input.cpp)

@@ -74,10 +74,11 @@ func _run() -> void:
 	await _test_gun()
 	await _test_missile()
 	await _test_vapour()
-	_test_radar()
+	await _test_radar()
 	await _test_hud()
 	_test_audio()
 	await _test_shoot_down_and_respawn()
+	await _test_ground_impact()
 	_test_frame_time()
 	_finish()
 
@@ -166,14 +167,37 @@ func _test_radar() -> void:
 	var r: Dictionary = sim.get_radar_contacts(20000.0)
 	var n: int = r.get("contacts", PackedFloat32Array()).size() / 8
 	_check("radar contacts", n > 0, "%d aircraft within 20 km" % n)
+	# Key 3 (YS RADAR button) cycles 2.5 / 5 / 10 / 15 / 20 nm; telemetry radar_range is metres
+	var seen := {}
+	for i in 5:
+		sim.press_button("RADAR")
+		await get_tree().physics_frame
+		await get_tree().process_frame
+		var tel: Dictionary = sim.get_player_telemetry()
+		seen[float(tel.get("radar_range_nm", 0.0))] = absf(float(tel.get("radar_range", 0.0)) - float(tel.get("radar_range_nm", 0.0)) * 1852.0) < 1.0
+	var steps: Array = seen.keys()
+	steps.sort()
+	_check("radar range steps", steps == [2.5, 5.0, 10.0, 15.0, 20.0] and not seen.values().has(false), str(steps))
 
 func _test_hud() -> void:
 	main.camera_rig.set_mode(1)
 	await _seconds(1.0)
 	await _shot("05_cockpit_hud")
 	_check("HUD gets the cockpit view", main.hud.cam_mode == 1 and main.hud.is_visible_in_tree(), "")
+	# Head under G, fed fixed G values (the live dogfight can't guarantee a G load): +9 G -> 25 mm down,
+	# -3 G -> 10 mm up (clamped), and a view change resets it
+	var rig: Node = main.camera_rig
+	for i in 120:
+		rig._update_head(1.0 / 60.0, 9.0)
+	var drop_9g: float = rig._head_drop
+	for i in 120:
+		rig._update_head(1.0 / 60.0, -3.0)
+	var rise_neg: float = rig._head_drop
 	main.camera_rig.set_mode(2)
 	await _seconds(0.5)
+	_check("head moves under G (cockpit only)", absf(drop_9g + 0.025) < 0.001 and absf(rise_neg - 0.010) < 0.001 and rig._head_drop == 0.0,
+		"%.1f mm at 9 G, %+.1f mm at -3 G, 0 after leaving F1" % [drop_9g * 1000.0, rise_neg * 1000.0])
+	_check("G overlay hidden outside the cockpit", not main.gforce._rect.visible, "")
 
 func _test_audio() -> void:
 	var n := 0
@@ -199,8 +223,9 @@ func _test_shoot_down_and_respawn() -> void:
 	main.camera_rig.cam_distance = 150.0
 	await _seconds(2.0)
 	await _shot("07_death_smoke_far")
-	var trails: PackedInt32Array = sim.get_effects_stats()
-	_check("death smoke + fire trails", trails[1] >= 2, "%d trails, %d segments" % [trails[1], trails[0]])
+	var dfx: Node = main._death_fx
+	_check("death fire + smoke puffs", dfx.fire_spawned > 0 and dfx.smoke_spawned > 0,
+		"%d fire quads, %d smoke puffs so far" % [dfx.fire_spawned, dfx.smoke_spawned])
 	main.camera_rig.cam_distance = 18.0
 	var respawned: bool = main.get_node("RespawnManager").respawn()
 	await _seconds(1.0)
@@ -208,6 +233,40 @@ func _test_shoot_down_and_respawn() -> void:
 	_check("respawn", respawned and bool(tel.get("is_alive", false)) and _player_key() != old_key,
 		"new aircraft %s" % str(tel.get("identifier", "?")))
 	await _shot("08_after_respawn")
+
+# Shot down while on a runway: the jet hits the ground at once -> wreck removed, impact explosion, burning site.
+func _test_ground_impact() -> void:
+	# A runway may already hold a jet (spawning onto it = collision), so try the next one if needed
+	var alive_on_runway := false
+	for stp in ["[IFF1]COLE_AFB_RUNWAY", "[IFF1]BALUUT_RUNWAY", "[IFF1]HIGHWAY_STRIP"]:
+		sim.respawn_player("F-16(BLUE/MULTIROLE)", stp, 0)
+		await _seconds(1.0)
+		alive_on_runway = bool(sim.get_player_telemetry().get("is_alive", false))
+		if alive_on_runway:
+			break
+	var sites_before: int = main._crashes.sites_created
+	var key := _player_key()
+	sim.debug_kill_player()
+	var impact := false
+	var explosion := false
+	for i in 180:
+		await get_tree().process_frame
+		if not bool(sim.get_player_telemetry().get("is_alive", true)):
+			impact = true
+		if not sim.get_active_explosions().is_empty():
+			explosion = true
+		if impact and main._crashes.sites_created > sites_before:
+			break
+	main.camera_rig.cam_distance = 120.0
+	await _seconds(2.0)
+	await _shot("09_crash_site")
+	var model_hidden := true
+	for n in sim.find_children("Airplane_%d" % key, "Node3D", true, false):
+		model_hidden = not n.visible
+	_check("ground impact: wreck removed + explosion", impact and explosion and model_hidden,
+		"alive on runway %s, impact %s, explosion %s, model hidden %s" % [alive_on_runway, impact, explosion, model_hidden])
+	_check("ground impact: burning crash site", main._crashes.sites_created > sites_before, "%d sites burning" % main._crashes.site_count())
+	main.camera_rig.cam_distance = 18.0
 
 func _test_frame_time() -> void:
 	var sorted := _frame_ms.duplicate()
@@ -245,7 +304,7 @@ func _player_key() -> int:
 func _player_fx_value(offset: int) -> float:
 	var key := _player_key()
 	var rows: PackedFloat32Array = sim.get_aircraft_fx_state()["aircraft"]
-	for i in range(0, rows.size(), 18):
+	for i in range(0, rows.size(), 21):
 		if int(rows[i]) == key:
 			return rows[i + offset]
 	return -1.0

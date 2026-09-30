@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 #include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/packed_vector2_array.hpp>
 
 #include "core/crashlog.h"
 #include "core/ys_convert.h"
@@ -17,6 +19,8 @@ namespace ysgd {
 namespace {
 
 using Clock = std::chrono::high_resolution_clock;
+
+const int DNM_CLASS_AFTERBURNER = 2; // DNM "CLA 2": YS shows these parts while the afterburner is on
 
 double ms_between(Clock::time_point a, Clock::time_point b) {
     return std::chrono::duration<double, std::milli>(b - a).count();
@@ -88,12 +92,14 @@ void VisualSync::attach(Node3D *airplanes, Node3D *grounds, Node3D *weapons) {
     weapon_visuals.clear();
     weapon_pool.clear();
     cockpit_visuals.clear();
+    burner_meshes.clear(); // keyed by shell address, like the scene's ShellMeshCache
+    shaded_models.clear();
     cockpit_key_valid = false;
     prewarm_node = nullptr; // freed with its parent
     prewarm_frames_left = 0;
 }
 
-VisualSync::EntityVisual VisualSync::create_visual(FsVisualDnm &vis, const String &name, Node3D *parent) {
+VisualSync::EntityVisual VisualSync::create_visual(FsVisualDnm &vis, const String &name, Node3D *parent, VisualKind kind) {
     auto dnm = vis.GetDnmPtr();
     EntityVisual ev;
     ev.dnm_ptr = static_cast<const void *>(dnm.get());
@@ -108,12 +114,38 @@ VisualSync::EntityVisual VisualSync::create_visual(FsVisualDnm &vis, const Strin
     ev.node_tfm.resize(num_nodes);
     ev.node_has_tfm.assign(num_nodes, 0);
     std::unordered_map<const void *, Node3D *> ptr_to_gnode;
+    // Baked shading, once per model type (its meshes are then cached).
+    ModelShade shade;
+    if (kind != VisualKind::PLAIN && shaded_models.insert(ev.dnm_ptr).second) {
+        shade = bake_dnm_shade(vis, kind == VisualKind::AIRCRAFT ? ShadeKind::AIRCRAFT : ShadeKind::GROUND);
+    }
     for (int i = 0; i < num_nodes; ++i) {
         auto *dnm_node = node_array[i];
         MeshInstance3D *mi = memnew(MeshInstance3D);
         if (dnm_node != nullptr) {
             mi->set_name(dnm_node->nodeName.Strlen() > 0 ? String(dnm_node->nodeName.Txt()) : "DnmNode_" + String::num_int64(i));
-            Ref<ArrayMesh> mesh = mesh_cache.get(*dnm_node);
+            Ref<ArrayMesh> mesh;
+            if (kind == VisualKind::AIRCRAFT && dnm_node->dnmClassType == DNM_CLASS_AFTERBURNER) {
+                const BurnerMeshCache::Meshes &burner = burner_meshes.get(*dnm_node);
+                mesh = burner.flame;
+                if (mesh.is_valid()) {
+                    burner_seed = std::fmod(burner_seed + 0.618034f, 1.0f);
+                    mi->set_instance_shader_parameter("seed", burner_seed);
+                    mi->set_cast_shadows_setting(GeometryInstance3D::SHADOW_CASTING_SETTING_OFF);
+                    MeshInstance3D *haze = memnew(MeshInstance3D); // shown/hidden with its parent
+                    haze->set_name("HeatHaze");
+                    haze->set_mesh(burner.haze);
+                    haze->set_layer_mask(1u << (HEAT_HAZE_LAYER - 1));
+                    haze->set_visibility_range_end(HEAT_HAZE_RANGE_M);
+                    haze->set_cast_shadows_setting(GeometryInstance3D::SHADOW_CASTING_SETTING_OFF);
+                    haze->set_instance_shader_parameter("seed", burner_seed);
+                    mi->add_child(haze);
+                }
+            }
+            if (mesh.is_null()) {
+                auto s = shade.find(static_cast<const void *>(dnm_node));
+                mesh = mesh_cache.get(*dnm_node, s != shade.end() ? &s->second : nullptr);
+            }
             if (mesh.is_valid() && mesh->get_surface_count() > 0) {
                 mi->set_mesh(mesh);
             }
@@ -138,7 +170,7 @@ VisualSync::EntityVisual VisualSync::create_visual(FsVisualDnm &vis, const Strin
 
 // One visual per sim object, rebuilt only if the object's DNM model changes.
 VisualSync::EntityVisual *VisualSync::get_or_create(VisualTable &table, unsigned int key, FsVisualDnm &vis, Node3D *parent,
-                                                    const char *prefix) {
+                                                    const char *prefix, VisualKind kind) {
     const void *raw_dnm = static_cast<const void *>(vis.GetDnmPtr().get());
     auto it = table.find(key);
     if (it != table.end() && it->second.dnm_ptr != raw_dnm) {
@@ -149,9 +181,24 @@ VisualSync::EntityVisual *VisualSync::get_or_create(VisualTable &table, unsigned
         it = table.end();
     }
     if (it == table.end()) {
-        it = table.emplace(key, create_visual(vis, String(prefix) + "_" + String::num_int64(key), parent)).first;
+        it = table.emplace(key, create_visual(vis, String(prefix) + "_" + String::num_int64(key), parent, kind)).first;
     }
     return &it->second;
+}
+
+void VisualSync::forget_airplane(unsigned int key) {
+    for (VisualTable *table : {&airplane_visuals, &cockpit_visuals}) {
+        auto it = table->find(key);
+        if (it != table->end()) {
+            if (it->second.root_node != nullptr) {
+                it->second.root_node->queue_free();
+            }
+            table->erase(it);
+        }
+    }
+    if (cockpit_key_valid && cockpit_key == key) {
+        cockpit_key_valid = false;
+    }
 }
 
 void VisualSync::set_root_visible(EntityVisual &ev, bool visible) {
@@ -252,14 +299,16 @@ void VisualSync::sync_airplanes(FsSimulation *sim, const MotionInterp &interp) {
     FsAirplane *air = nullptr;
     while ((air = sim->FindNextAirplane(air)) != nullptr) {
         ++count;
-        const bool alive = (air->IsAlive() == YSTRUE) || (air == player);
+        // Dead (FSDEAD: hit the ground or destroyed outright) = removed; the crash site / explosion take over.
+        // Shot-down jets spinning down are still "alive" in YS and stay visible until impact.
+        const bool alive = (air->IsAlive() == YSTRUE);
         if (alive && air->vis != nullptr) {
             air->Prop().SetupVisual(air->vis);
         }
         if (air->vis.GetDnmPtr() == nullptr) {
             continue;
         }
-        EntityVisual *ev = get_or_create(airplane_visuals, air->SearchKey(), air->vis, airplanes_root, "Airplane");
+        EntityVisual *ev = get_or_create(airplane_visuals, air->SearchKey(), air->vis, airplanes_root, "Airplane", VisualKind::AIRCRAFT);
         update_visual(*ev, air->vis, interp.air(air), alive, false);
         if (alive) {
             update_hardpoints(*ev, air);
@@ -347,7 +396,7 @@ void VisualSync::sync_grounds(FsSimulation *sim, const MotionInterp &interp, con
         if (gnd->vis.GetDnmPtr() == nullptr) {
             continue;
         }
-        EntityVisual *ev = get_or_create(ground_visuals, key, gnd->vis, grounds_root, "Ground");
+        EntityVisual *ev = get_or_create(ground_visuals, key, gnd->vis, grounds_root, "Ground", VisualKind::GROUND);
         if (!settled) {
             ++perf.gnd_full_updates;
         }
@@ -491,6 +540,17 @@ void VisualSync::build_prewarm(Node3D *parent) {
     mesh->surface_set_material(0, mats.lit_cockpit);
     mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
     mesh->surface_set_material(1, mats.trans_cockpit);
+    // Flame material, compiled before the first afterburner (same vertex format as burner_mesh.cpp)
+    PackedVector2Array uv;
+    uv.resize(3);
+    Array flame = arrays.duplicate();
+    flame[Mesh::ARRAY_COLOR] = Variant();
+    flame[Mesh::ARRAY_TEX_UV] = uv;
+    flame[Mesh::ARRAY_TEX_UV2] = uv;
+    mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, flame);
+    mesh->surface_set_material(2, burner_meshes.material());
+    mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, flame);
+    mesh->surface_set_material(3, burner_meshes.haze_material());
     mesh->set_custom_aabb(AABB(Vector3(-1e7, -1e7, -1e7), Vector3(2e7, 2e7, 2e7)));
 
     prewarm_node = memnew(MeshInstance3D);

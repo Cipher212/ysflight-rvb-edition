@@ -5,11 +5,13 @@
 //   MODEL_MATRIX[0].xyz = start velocity (m/s; horizontal part slows down, vertical part is kept)
 //   MODEL_MATRIX[1].xyz = (start size, end size, life s)   MODEL_MATRIX[2].x = spawn time
 //   MODEL_MATRIX[3].xyz = spawn position   COLOR = colour   INSTANCE_CUSTOM.x = heat (fire glow, 0..1+)
+//   INSTANCE_CUSTOM.y = grey-out: the colour drifts towards GREY over the puff's life (0 = keep colour)
 shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, blend_mix, shadows_disabled;
 
 uniform float now;
 varying float v_heat;
+const vec3 GREY = vec3(0.45);
 
 void vertex() {
 	float life = MODEL_MATRIX[1].z;
@@ -26,6 +28,7 @@ void vertex() {
 		vec3 world = centre + (INV_VIEW_MATRIX[0].xyz * VERTEX.x + INV_VIEW_MATRIX[1].xyz * VERTEX.y) * size;
 		POSITION = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(world, 1.0));
 		COLOR.a *= smoothstep(0.0, 0.06, t) * pow(1.0 - t, 1.5);
+		COLOR.rgb = mix(COLOR.rgb, GREY, INSTANCE_CUSTOM.y * t);
 		v_heat = INSTANCE_CUSTOM.x * clamp(1.0 - t * 3.2, 0.0, 1.0);
 	}
 }

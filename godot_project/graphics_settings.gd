@@ -12,6 +12,9 @@ class_name GraphicsSettings
 #   - fxaa: Viewport screen space FXAA toggle.
 #   - draw_distance_km: Camera3D far plane in metres (20..120 km).
 #   - fx_density: effects quality Low/Medium/High -> main.set_effects_quality (trail points, puff pools).
+#   - EFFECT_KEYS: effects for stronger PCs, each on/off (on in the Medium and High presets, off in Low):
+#     aircraft shadows (C++), cloud shadows / water shine (global shader uniforms), heat haze (camera
+#     cull layer), sun & explosion glare, speed lines & mist (fx/ nodes).
 #   - graphics_preset: Synchronises Low/Medium/High presets or sets Custom on edit.
 #
 # BENCHMARK MODE:
@@ -19,6 +22,8 @@ class_name GraphicsSettings
 #   Medium values are strictly enforced so runs remain comparable. V-Sync is
 #   handled solely by the benchmark runner.
 # ==============================================================================
+
+const EFFECT_KEYS := ["aircraft_shadows", "cloud_shadows", "water_shine", "heat_haze", "lens_glare", "speed_lines"]
 
 var main: Node = null
 var controls: Node = null
@@ -41,7 +46,7 @@ func _on_controls_changed(key: String) -> void:
 		var preset: String = str(controls.get_value("graphics_preset", "Medium"))
 		if preset != "Custom":
 			_apply_preset(preset)
-	elif key in ["render_scale", "msaa", "fxaa", "draw_distance_km", "fx_density"]:
+	elif key in ["render_scale", "msaa", "fxaa", "draw_distance_km", "fx_density"] or key in EFFECT_KEYS:
 		_set_preset_custom()
 		_apply_setting(key)
 	elif key == "vsync":
@@ -54,6 +59,8 @@ func _apply_preset(preset: String) -> void:
 		return
 
 	_applying_preset = true
+	for key in EFFECT_KEYS:
+		controls.set_value(key, preset != "Low")
 	match preset:
 		"Low":
 			controls.set_value("render_scale", 0.75)
@@ -99,6 +106,8 @@ func apply_all_settings() -> void:
 	_apply_fxaa()
 	_apply_draw_distance()
 	_apply_fx_quality()
+	for key in EFFECT_KEYS:
+		_apply_effect(key, bool(controls.get_value(key, true)))
 
 func _apply_benchmark_defaults() -> void:
 	# In benchmark mode, enforce Medium values and leave vsync to benchmark.gd
@@ -110,8 +119,11 @@ func _apply_benchmark_defaults() -> void:
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 	if main != null and main.camera != null:
 		main.camera.far = 80000.0
+		main.sky_environment.set_draw_distance(main.camera.far)
 	if main != null:
 		main.set_effects_quality(1) # Medium
+		for key in EFFECT_KEYS:
+			_apply_effect(key, true)
 
 func _apply_setting(key: String) -> void:
 	match key:
@@ -125,6 +137,9 @@ func _apply_setting(key: String) -> void:
 			_apply_draw_distance()
 		"fx_density":
 			_apply_fx_quality()
+		_:
+			if key in EFFECT_KEYS and controls != null:
+				_apply_effect(key, bool(controls.get_value(key, true)))
 
 func _apply_render_scale() -> void:
 	var vp: Viewport = get_viewport()
@@ -174,9 +189,28 @@ func _apply_draw_distance() -> void:
 		return
 	var dist_km: float = float(controls.get_value("draw_distance_km", 80.0))
 	main.camera.far = clamp(dist_km, 20.0, 120.0) * 1000.0
+	main.sky_environment.set_draw_distance(main.camera.far) # the haze reaches full just before the far clip
 
 func _apply_fx_quality() -> void:
 	if main == null or controls == null:
 		return
 	var names := ["Low", "Medium", "High"]
 	main.set_effects_quality(maxi(names.find(str(controls.get_value("fx_density", "Medium"))), 0))
+
+func _apply_effect(key: String, on: bool) -> void:
+	if main == null:
+		return
+	match key:
+		"aircraft_shadows":
+			main.ysflight_sim.set_aircraft_shadows_enabled(on)
+		"cloud_shadows":
+			RenderingServer.global_shader_parameter_set("cloud_shadows_on", 1.0 if on else 0.0)
+		"water_shine":
+			RenderingServer.global_shader_parameter_set("water_shine_on", 1.0 if on else 0.0)
+		"heat_haze":
+			main.camera.set_cull_mask_value(main.HEAT_HAZE_LAYER, on)
+		"lens_glare":
+			main.sun_glare.enabled = on
+			main.blast_glow.enabled = on
+		"speed_lines":
+			main.speed_streaks.enabled = on

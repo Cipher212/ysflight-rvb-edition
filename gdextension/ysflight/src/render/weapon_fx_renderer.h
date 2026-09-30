@@ -1,7 +1,7 @@
 #ifndef YSGD_WEAPON_FX_RENDERER_H
 #define YSGD_WEAPON_FX_RENDERER_H
 
-// Bullet/debris tracers and rocket-motor/flare glows, once per rendered frame. Each is one MultiMesh whose
+// Bullet/debris tracers and rocket-motor/flare/muzzle glows, once per rendered frame. Each is one MultiMesh whose
 // instance buffer is filled in C++ and uploaded in one call (hundreds of bullets used to cost a GDScript
 // Dictionary each). Shaders: res://shaders/tracer.gdshader, res://shaders/exhaust_glow.gdshader.
 

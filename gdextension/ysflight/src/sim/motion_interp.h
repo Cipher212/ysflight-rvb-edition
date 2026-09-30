@@ -38,6 +38,7 @@ public:
     // Once per rendered frame, before anything reads transforms. alpha 0 = previous tick, 1 = latest.
     void begin_frame(double physics_fraction);
     void set_enabled(bool enabled) { enabled_ = enabled; }
+    void forget_air(unsigned int key) { air_.erase(key); }  // Aircraft deleted from the sim
     double alpha() const { return alpha_; }
 
     godot::Transform3D air(const FsAirplane *air) const;

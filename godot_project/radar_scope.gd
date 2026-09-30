@@ -44,7 +44,12 @@ var airplane_transforms: Dictionary = {}
 var _font: Font = null
 var _radar_data: Dictionary = {}
 var _should_draw: bool = false
-var _radar_range: float = 20000.0
+var _radar_range: float = 10.0 * 1852.0 # metres
+var _radar_range_nm: float = 10.0
+
+const NM_TO_M := 1852.0
+const DEFAULT_RANGE_NM := 10.0
+const SCOPE_SCALE := 1.2 # 2026-09-30 user: scope 20% bigger
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -84,10 +89,12 @@ func update_radar(
 		elif get_parent() != null and get_parent().get_parent() != null and "ysflight_sim" in get_parent().get_parent():
 			ysflight_sim = get_parent().get_parent().ysflight_sim
 
-	# Fetch radar range (default 20 km if missing or 0)
-	_radar_range = float(telemetry.get("radar_range", 20000.0))
-	if _radar_range <= 0.0:
-		_radar_range = 20000.0
+	# Radar range: YS steps 2.5 / 5 / 10 / 15 / 20 nm (key 3 cycles); telemetry gives metres and nm
+	_radar_range = float(telemetry.get("radar_range", 0.0))
+	_radar_range_nm = float(telemetry.get("radar_range_nm", 0.0))
+	if _radar_range <= 0.0: # radar off / inoperative: keep showing the default range
+		_radar_range_nm = DEFAULT_RANGE_NM
+		_radar_range = DEFAULT_RANGE_NM * NM_TO_M
 
 	# Query C++ radar contacts once per frame when drawn
 	if ysflight_sim != null and ysflight_sim.has_method("get_radar_contacts"):
@@ -140,7 +147,7 @@ func _draw() -> void:
 			hud_col = Color(0.35, 1.0, 0.45)
 
 	# Overall UI scale factor: (vp_height / 1080) * radar_size * hud_scale
-	var s: float = (vp_size.y / 1080.0) * radar_size * hud_scale
+	var s: float = (vp_size.y / 1080.0) * radar_size * hud_scale * SCOPE_SCALE
 	if s < 0.1:
 		s = 1.0
 
@@ -178,15 +185,7 @@ func _draw() -> void:
 	# --------------------------------------------------------------------------
 	# 3. Radar Range Label (Lower-Left of Ring)
 	# --------------------------------------------------------------------------
-	var range_text: String = ""
-	if _radar_range >= 1000.0:
-		var km_val: float = _radar_range / 1000.0
-		if fmod(km_val, 1.0) == 0.0:
-			range_text = "%d km" % int(km_val)
-		else:
-			range_text = "%.1f km" % km_val
-	else:
-		range_text = "%d m" % int(_radar_range)
+	var range_text: String = ("%d NM" % int(_radar_range_nm)) if fmod(_radar_range_nm, 1.0) == 0.0 else ("%.1f NM" % _radar_range_nm)
 
 	var font_sz_lbl: int = maxi(9, int(round(11.0 * s)))
 	var lbl_pos := centre + Vector2(-radius * 0.85, radius * 0.95)

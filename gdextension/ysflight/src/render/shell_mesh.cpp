@@ -66,9 +66,9 @@ void accumulate_round_vertex_normals(const YsShellExt &shl, YsHashTable<YsVec3> 
     }
 }
 
-// Triangulates one polygon (fan if convex, YsSword otherwise) into the given buffers.
+// Triangulates one polygon (fan if convex, YsSword otherwise) into the given buffers. vcols: per vertex.
 void append_polygon(SurfaceBuffers &buf, int nPlVt, const YsArray<YsVec3, 16> &plg, const YsArray<YsVec3, 16> &vtxNoms,
-                    const Vector3 &gface_n, const Color &gcol) {
+                    const Vector3 &gface_n, const YsArray<Color, 16> &vcols) {
     if (nPlVt == 3 || YsCheckConvex3(nPlVt, plg) == YSTRUE) {
         const Vector3 p0 = ys_to_godot_pos(plg[0]);
         const Vector3 n0 = ys_to_godot_normal(vtxNoms[0]);
@@ -76,7 +76,7 @@ void append_polygon(SurfaceBuffers &buf, int nPlVt, const YsArray<YsVec3, 16> &p
             add_oriented_triangle(buf.verts, buf.norms, buf.cols,
                                   p0, ys_to_godot_pos(plg[i]), ys_to_godot_pos(plg[i + 1]),
                                   n0, ys_to_godot_normal(vtxNoms[i]), ys_to_godot_normal(vtxNoms[i + 1]),
-                                  gface_n, gcol, gcol, gcol);
+                                  gface_n, vcols[0], vcols[i], vcols[i + 1]);
         }
         return;
     }
@@ -91,6 +91,7 @@ void append_polygon(SurfaceBuffers &buf, int nPlVt, const YsArray<YsVec3, 16> &p
     auto normal_of = [&](int vi) -> Vector3 {
         return (0 <= vi && vi < nPlVt) ? ys_to_godot_normal(vtxNoms[vi]) : gface_n;
     };
+    auto color_of = [&](int vi) -> Color { return (0 <= vi && vi < nPlVt) ? vcols[vi] : vcols[0]; };
     for (int i = 0; i < sword.GetNumPolygon(); ++i) {
         const YsArray<YsVec3> *tri = sword.GetPolygon(i);
         const YsArray<int> *triIdx = sword.GetVertexIdList(i);
@@ -103,14 +104,14 @@ void append_polygon(SurfaceBuffers &buf, int nPlVt, const YsArray<YsVec3, 16> &p
             add_oriented_triangle(buf.verts, buf.norms, buf.cols,
                                   p0, ys_to_godot_pos((*tri)[j]), ys_to_godot_pos((*tri)[j + 1]),
                                   n0, normal_of((*triIdx)[j]), normal_of((*triIdx)[j + 1]),
-                                  gface_n, gcol, gcol, gcol);
+                                  gface_n, color_of((*triIdx)[0]), color_of((*triIdx)[j]), color_of((*triIdx)[j + 1]));
         }
     }
 }
 
 } // namespace
 
-Ref<ArrayMesh> ShellMeshCache::get(const YsShellExt &shl) {
+Ref<ArrayMesh> ShellMeshCache::get(const YsShellExt &shl, const VertexShade *shade) {
     const void *cache_key = static_cast<const void *>(&shl);
     auto it = cache.find(cache_key);
     if (it != cache.end()) {
@@ -150,7 +151,17 @@ Ref<ArrayMesh> ShellMeshCache::get(const YsShellExt &shl) {
         const YsShellExt::PolygonAttrib *plAttr = shl.GetPolygonAttrib(plHd);
         const bool is_bright = (plAttr != nullptr && plAttr->GetNoShading() == YSTRUE);
         SurfaceBuffers &target = gcol.a < 0.99f ? trans : (is_bright ? bright : lit);
-        append_polygon(target, nPlVt, plg, vtxNoms, ys_to_godot_normal(faceNom), gcol);
+        YsArray<Color, 16> vcols(nPlVt, nullptr);
+        for (int i = 0; i < nPlVt; ++i) {
+            vcols[i] = gcol;
+            if (shade != nullptr && &target == &lit) { // baked shading: lit paint only, not lights or glass
+                auto s = shade->find(shl.GetSearchKey(plVtHd[i]));
+                if (s != shade->end()) {
+                    vcols[i] = Color(gcol.r * s->second, gcol.g * s->second, gcol.b * s->second, gcol.a);
+                }
+            }
+        }
+        append_polygon(target, nPlVt, plg, vtxNoms, ys_to_godot_normal(faceNom), vcols);
     }
 
     Ref<ArrayMesh> mesh;

@@ -1,12 +1,23 @@
-# YSFlight RvB Edition - v0.2.0-pre-alpha
+# YSFlight RvB Edition - v0.3.0-pre-alpha
 
 YSFlight's flight simulation (YSFlight Community Edition) running inside the Godot 4 engine, built for
 the RvB (Red vs Blue) community events. **This is a pre-alpha test build**: expect bugs and missing
 features. Right now it starts a 16 vs 16 AI dogfight on the Luavi map with you in an F-16.
 
-**New in v0.2.0:** faster (about 10% more FPS, much steadier frame times), YSFlight-style white wingtip
-lines, proper missile smoke trails, darker damage smoke, big black smoke and fire when a jet is shot
-down, and an FPS / latency readout in the top-right corner.
+**New in v0.3.0:**
+- **Smarter AI:** enemies and wingmen now fly by role (fighters, attackers, bombers, close air support,
+  stealth jets, gun fighters and drones). They dodge missiles with flares and hard turns, help nearby
+  teammates, and are slower to notice you sneaking up from behind. Shot-down AI jets return after 5
+  seconds.
+- **Afterburners:** bright flames with shock diamonds, plus heat shimmer behind them.
+- **New look:** the sun and distant hills in the sky, sea all the way to the horizon, a grittier Ace
+  Combat-style colour grade, drifting cloud shadows, sparkling water, shading on aircraft and buildings,
+  YSFlight-style aircraft shadows, sun and explosion glare, speed lines and mist.
+- **Spectator cameras** (F5 / F6) stay locked on the aircraft you picked.
+- **New Graphics options** to switch each of the new effects off on slower PCs.
+
+(v0.2.0 brought more FPS, YSFlight-style wingtip lines, missile smoke trails, fire and smoke when a jet is
+shot down, and the FPS readout.)
 
 ---
 
@@ -64,13 +75,16 @@ Full key list: see [Controls](#controls-ysflight-defaults) below.
 ### If the game runs slowly
 - The number in the **top-right corner** is your frame rate (FPS). 60 or more is smooth.
 - Press **Esc** and in the **Graphics** section set **Graphics Preset** to **Low**. This lowers the
-  3D resolution a little and uses simpler effects.
+  3D resolution a little and switches the heavier effects off.
+- Or keep **Medium** and untick single effects in the same section: **Aircraft Shadows**, **Cloud
+  Shadows**, **Water Shine**, **Afterburner Heat Haze**, **Sun & Explosion Glare**, **Speed Lines & Mist**.
 - On laptops: plug in the charger and set Windows to **Best performance** (battery icon).
 - The FPS readout can be hidden in **Esc > HUD > Show FPS / Latency**.
 
 ### Other ways to start
 - **`Spectate_AI`**: the computer flies your jet while you watch. **F1-F8** switch cameras, drag with
-  the mouse to look around, mouse wheel to zoom.
+  the mouse to look around, mouse wheel to zoom. **F6** follows other aircraft: **Tab** or **[ ]** picks
+  the next one.
 - **`Benchmark`**: a 2-minute automatic performance test (silent, don't touch anything). At the end
   a window shows the results; please send us a screenshot of it.
 
@@ -145,7 +159,9 @@ The game code is in `godot_project/` (GDScript, organised in `camera/`, `control
 YSFlight simulation, organised in `core/`, `render/`, `sim/`, `bridge/`). A pre-built bridge
 (`godot_project/bin/*.dll`) is included, so you only need to rebuild it if you change the C++: install
 Python + SCons + Visual Studio 2022 C++ tools, then run
-`python -m SCons platform=windows target=template_debug` in `gdextension/ysflight`.
+`python -m SCons platform=windows target=template_debug` in `gdextension/ysflight`. The build also needs
+the full YSCE sources (https://github.com/YSCEDC/YSCE) and godot-cpp; `ysce/` here holds only the files
+changed for the RvB Edition (including the tactical AI in `ysce/src/autopilot/fsrvb*`).
 
 Automated test (plays the mission with scripted inputs and checks every system, with screenshots):
 `python tools/run_tests.py`. Please run it before sending changes.

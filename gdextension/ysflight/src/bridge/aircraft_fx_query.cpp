@@ -13,6 +13,8 @@ using namespace godot;
 
 namespace ysgd {
 
+static const double IMPACT_MAX_HEIGHT_M = 30.0; // dead this close to the terrain = it hit the ground
+
 template <size_t N>
 static void append_row(PackedFloat32Array &out, const float (&row)[N]) {
     for (float f : row) {
@@ -33,19 +35,22 @@ Dictionary AircraftFxTracker::collect(FsSimulation *sim, const MotionInterp &int
         const unsigned int key = air->SearchKey();
         const bool alive = (air->IsAlive() == YSTRUE);
         if (!alive) {
-            const YsVec3 ys_pos = air->GetPosition();
-            const double ground_y = sim->GetFieldElevation(ys_pos.x(), ys_pos.z());
-            const bool on_ground = (ys_pos.y() - ground_y) < 5.0;
-            if (on_ground && crashed_keys.insert(key).second) { // first frame on the ground after dying
-                const Vector3 p = ys_to_godot_pos(ys_pos);
-                append_row(crashes, {p.x, p.y, p.z, fabs(ground_y) < 1.0 ? 1.0f : 0.0f, (float)air->Prop().GetOutsideRadius()});
+            // First frame dead: an impact if it happened at the ground (YS FSDEAD is set on terrain collision;
+            // a jet destroyed outright in the air also becomes FSDEAD, but high up - its explosion covers it).
+            if (crashed_keys.insert(key).second) {
+                const YsVec3 ys_pos = air->GetPosition();
+                const double ground_y = sim->GetFieldElevation(ys_pos.x(), ys_pos.z());
+                if (ys_pos.y() - ground_y < IMPACT_MAX_HEIGHT_M) {
+                    // Water from the field's area polygons (on RvB maps flat land is at sea level too)
+                    const bool water = sim->GetAreaType(ys_pos) == YSSCNAREA_WATER;
+                    const Vector3 p = ys_to_godot_pos(YsVec3(ys_pos.x(), YsGreater(ys_pos.y(), ground_y), ys_pos.z()));
+                    append_row(crashes, {p.x, p.y, p.z, water ? 1.0f : 0.0f, (float)air->Prop().GetOutsideRadius()});
+                }
             }
-            continue; // FSDEAD in the air: destroyed outright (the explosion effect covers it)
+            continue;
         }
+        crashed_keys.erase(key); // alive (flying or spinning down): its next death is a new event
         const bool dying = is_dying(air);
-        if (!dying) {
-            crashed_keys.erase(key); // flying again (respawned object): allow a new crash event
-        }
         const Transform3D t = interp.air(air);
         YsVec3 vel = YsOrigin();
         air->Prop().GetVelocity(vel);
@@ -55,9 +60,18 @@ Dictionary AircraftFxTracker::collect(FsSimulation *sim, const MotionInterp &int
         air->Prop().GetVaporPosition(vap_ys);
         const Vector3 vap = ys_to_godot_pos(vap_ys);
         const Vector3 fwd = -t.basis.get_column(2).normalized();
+        // Burning / smoking point: the DAT smoke generator (exhaust on RvB jets), else the centre
+        Vector3 smoke_local;
+        if (air->Prop().GetNumSmokeGenerator() > 0) {
+            YsVec3 smk;
+            air->Prop().GetSmokeGeneratorPosition(smk, 0);
+            smoke_local = ys_to_godot_pos(smk);
+        }
+        const Vector3 smoke = t.xform(smoke_local);
         append_row(aircraft, {(float)key, t.origin.x, t.origin.y, t.origin.z, v.x, v.y, v.z, damage,
                               dying ? 1.0f : 0.0f, (!dying && air->Prop().IsTrailingVapor() == YSTRUE) ? 1.0f : 0.0f,
-                              vap.x, vap.y, vap.z, (float)air->Prop().GetOutsideRadius(), fwd.x, fwd.y, fwd.z, 0.0f});
+                              vap.x, vap.y, vap.z, (float)air->Prop().GetOutsideRadius(), fwd.x, fwd.y, fwd.z, 0.0f,
+                              smoke.x, smoke.y, smoke.z});
     }
     out["aircraft"] = aircraft;
     out["crashes"] = crashes;

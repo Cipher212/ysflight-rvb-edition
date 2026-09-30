@@ -71,10 +71,17 @@ bool enable_player_autopilot(FsSimulation *sim) {
     if (sim == nullptr || sim->GetPlayerAirplane() == nullptr) {
         return false;
     }
+    FsAirplane *player = sim->GetPlayerAirplane();
+    const FSRVBROLE role = FsRvbRoleTable::GetRole(player->GetIdentifier());
+    if (FsRvbTacticalAutopilot::enabled == YSTRUE && role != FSRVBROLE_NONE) {
+        player->SetAutopilot(FsRvbTacticalAutopilot::Create(role));
+        log_line(String("Player aircraft handed to the RvB tactical AI (") + FsRvbRoleToStr(role) + ").");
+        return true;
+    }
     FsDogfight *df = FsDogfight::Create();
     df->gLimit = 9.0;
     df->minAlt = 300.0;
-    sim->GetPlayerAirplane()->SetAutopilot(df);
+    player->SetAutopilot(df);
     log_line("Player aircraft handed to the FsDogfight autopilot.");
     return true;
 }

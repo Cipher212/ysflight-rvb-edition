@@ -1,10 +1,12 @@
 extends Node3D
 
 const PuffSystem := preload("res://fx/puff_system.gd")
+const BlastGlow := preload("res://fx/blast_glow.gd")
 
 # Explosions from get_active_explosions(): a flash (core + star + shock ring), spark streaks, a short light
-# and smoke puffs. Flashes and sparks are GPU-aged ring buffers like the puffs: written once at spawn,
-# no per-frame CPU work. Water hits (YS FSEXPLOSION_WATERPLUME) get a white spray instead.
+# and smoke puffs; nearby blasts also glow on screen (fx/blast_glow.gd). Flashes and sparks are GPU-aged
+# ring buffers like the puffs: written once at spawn, no per-frame CPU work. Water hits (YS
+# FSEXPLOSION_WATERPLUME) get a white spray instead.
 
 const SPARK_SHADER := preload("res://shaders/spark_streak.gdshader")
 const FLASH_SHADER := preload("res://shaders/explosion_flash.gdshader")
@@ -14,6 +16,7 @@ const LIGHT_COUNT := 4
 const EXP_WATER_PLUME := 1
 
 var puffs: PuffSystem = null
+var blast_glow: BlastGlow = null
 var quality: int = 1
 
 var _time: float = 0.0
@@ -29,8 +32,9 @@ var _light_peak: PackedFloat32Array = PackedFloat32Array()
 var _seen_uids: Dictionary = {}
 var _rng := RandomNumberGenerator.new()
 
-func setup(p_puffs: PuffSystem) -> void:
+func setup(p_puffs: PuffSystem, p_blast_glow: BlastGlow) -> void:
 	puffs = p_puffs
+	blast_glow = p_blast_glow
 
 func _ready() -> void:
 	_rng.randomize()
@@ -71,7 +75,9 @@ func _trigger(pos: Vector3, radius: float, exp_type: int) -> void:
 	var s: float = clampf(radius, 12.0, 95.0)
 	var n_scale: float = 0.5 if quality <= 0 else 1.0
 	if exp_type == EXP_WATER_PLUME:
-		for i in int(8 * n_scale):
+		# YS gives water plumes the aircraft's radius (~8 m); a jet hitting the sea throws much more spray
+		s = maxf(radius * 3.0, 20.0)
+		for i in int(10 * n_scale):
 			var spread := Vector3(_rng.randf_range(-0.35, 0.35), _rng.randf_range(0.0, 0.25), _rng.randf_range(-0.35, 0.35)) * s
 			var up := Vector3(spread.x * 0.6, _rng.randf_range(12.0, 28.0), spread.z * 0.6)
 			puffs.spawn(pos + spread, up, s * 0.28, s * 0.95, _rng.randf_range(1.6, 2.6), Color(0.93, 0.94, 0.95, 0.65))
@@ -80,6 +86,7 @@ func _trigger(pos: Vector3, radius: float, exp_type: int) -> void:
 	_spawn_flash(pos, s * 0.45, s * 2.35, 0.32, Color(1.0, 0.72, 0.25, 0.98))
 	_spawn_flash(pos, s * 0.35, s * 1.75, 0.22, Color(1.0, 0.92, 0.65, 0.95))
 	_start_light(pos, s)
+	blast_glow.add(pos, s)
 	for i in int(clampi(int(s * 0.5), 12, 24) * n_scale):
 		var dir := Vector3(_rng.randf_range(-1.0, 1.0), _rng.randf_range(-0.35, 1.0), _rng.randf_range(-1.0, 1.0)).normalized()
 		_spawn_spark(pos + dir * (s * 0.08), dir * _rng.randf_range(s * 1.6, s * 3.8), _rng.randf_range(s * 0.18, s * 0.42),

@@ -33,7 +33,6 @@ godot::Dictionary player_telemetry(FsSimulation *sim, const MotionInterp &interp
 
 godot::PackedVector3Array tower_positions(FsSimulation *sim);
 godot::Color sky_color(FsSimulation *sim);
-godot::Color ground_color(FsSimulation *sim);
 
 } // namespace ysgd
 

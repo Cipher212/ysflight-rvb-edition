@@ -33,7 +33,10 @@ void vertex() {
 	// Fade smoke the camera is inside of (a wide trail right in front of the lens would fill the screen)
 	a *= clamp((dist - w_eff * 0.5) / (w_eff * 1.5 + 0.001), 0.0, 1.0);
 
-	vec3 world = p + side * (VERTEX.x * w_eff);
+	// Draw on the camera-facing side of the trail's thickness (a trail is a tube, not a flat sheet): wide
+	// fire/smoke then wraps around the aircraft it comes from instead of being cut in half by the airframe.
+	float pull = min(w_eff * 0.5, dist * 0.5);
+	vec3 world = p + side * (VERTEX.x * w_eff) + (to_cam / dist) * pull;
 	POSITION = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(world, 1.0));
 	v_alpha = a;
 }

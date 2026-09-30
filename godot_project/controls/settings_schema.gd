@@ -277,6 +277,13 @@ const SETTINGS: Array[Dictionary] = [
 
 	# --- Display ---
 	{
+		"key": "cockpit_head_movement",
+		"label": "Head Moves Under G (Cockpit)",
+		"section": "Display",
+		"type": "bool",
+		"default": true
+	},
+	{
 		"key": "show_input_overlay",
 		"label": "Show Input Overlay",
 		"section": "Display",
@@ -342,6 +349,49 @@ const SETTINGS: Array[Dictionary] = [
 		"type": "enum",
 		"default": "Medium",
 		"options": ["Low", "Medium", "High"]
+	},
+	# Effects for stronger PCs: on in the Medium and High presets, off in Low (graphics_settings.gd).
+	{
+		"key": "aircraft_shadows",
+		"label": "Aircraft Shadows",
+		"section": "Graphics",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "cloud_shadows",
+		"label": "Cloud Shadows",
+		"section": "Graphics",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "water_shine",
+		"label": "Water Shine",
+		"section": "Graphics",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "heat_haze",
+		"label": "Afterburner Heat Haze",
+		"section": "Graphics",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "lens_glare",
+		"label": "Sun & Explosion Glare",
+		"section": "Graphics",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "speed_lines",
+		"label": "Speed Lines & Mist",
+		"section": "Graphics",
+		"type": "bool",
+		"default": true
 	},
 
 	# --- HUD ---

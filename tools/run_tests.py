@@ -37,10 +37,11 @@ def main():
     for r in res["results"]:
         detail = f"  ({r['detail']})" if r["detail"] else ""
         print(f"{'PASS' if r['ok'] else 'FAIL'}  {r['name']}{detail}")
-    script_errors = [l for l in (proc.stdout + proc.stderr).splitlines() if "SCRIPT ERROR" in l]
+    # Shader compile errors don't stop the game (the effect just vanishes), so they count as failures too
+    script_errors = [l for l in (proc.stdout + proc.stderr).splitlines() if "SCRIPT ERROR" in l or "SHADER ERROR" in l]
     for l in script_errors[:10]:
-        print("SCRIPT ERROR:", l)
-    print(f"\n{res['total'] - res['failed']}/{res['total']} passed, {len(script_errors)} script errors. Screenshots: {res['dir']}")
+        print("ERROR:", l)
+    print(f"\n{res['total'] - res['failed']}/{res['total']} passed, {len(script_errors)} script/shader errors. Screenshots: {res['dir']}")
     return 1 if res["failed"] or script_errors else 0
 
 

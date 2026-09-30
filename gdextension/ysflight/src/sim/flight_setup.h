@@ -24,7 +24,8 @@ bool respawn_player(FsWorld *world, FsSimulation *sim, const godot::String &airp
                     const godot::String &start_position, int64_t iff);
 // Test hook: same as a real shoot-down (spins down until impact).
 void kill_player(FsSimulation *sim);
-// Hands the player's aircraft to the YS dogfight AI (benchmark and --ai-player).
+// Hands the player's aircraft to the AI (benchmark and --ai-player): the RvB AI if the aircraft has an
+// RvB role, else the YS dogfight AI.
 bool enable_player_autopilot(FsSimulation *sim);
 
 } // namespace ysgd

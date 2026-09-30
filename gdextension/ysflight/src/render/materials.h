@@ -15,9 +15,10 @@ struct Materials {
     // whole session: changing cull_mode on a material recompiles its shader (55-90 ms hitch).
     godot::Ref<godot::StandardMaterial3D> lit_cockpit;
     godot::Ref<godot::StandardMaterial3D> trans_cockpit;
-    godot::Ref<godot::StandardMaterial3D> terrain;
+    godot::Ref<godot::ShaderMaterial> terrain;
     godot::Ref<godot::StandardMaterial3D> point;
-    // Coplanar field maps (PC2) and signboards (PLT): depth-biased per layer (UV.x = layer index).
+    // Coplanar field maps (PC2) and signboards (PLT): depth-biased per layer (UV.x = layer index, UV.y = 1 on
+    // water polygons). Shaders in res://shaders/ (map_*.gdshader, terrain.gdshader).
     godot::Ref<godot::ShaderMaterial> map_poly;
     godot::Ref<godot::ShaderMaterial> map_line;
     godot::Ref<godot::ShaderMaterial> map_point;

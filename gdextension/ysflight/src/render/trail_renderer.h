@@ -5,7 +5,7 @@
 //   - wingtip lines: one thin white line per wingtip while YS reports vapour (high G), longer-lived above
 //     CONTRAIL_ALT_M (YSFlight draws its vapour the same way: thin white lines from the wingtips)
 //   - missile / rocket / flare smoke
-//   - damage smoke (damaged, still flying), death smoke + fire (shot down, spinning down)
+//   - damage smoke (damaged, still flying). Shot-down jets' fire + smoke are puffs (fx/death_fx.gd).
 // Points are recorded from raw sim positions after every physics tick; each frame the newest point is the
 // emitter's interpolated position, so a trail stays attached to the drawn model. When a source stops (vapour
 // ends, missile hits, wreck hits the ground) its trail is left behind and fades out point by point.
@@ -30,7 +30,7 @@ class MotionInterp;
 
 class TrailRenderer {
 public:
-    // 0 = low (half the points, shorter death smoke), 1 = medium, 2 = high
+    // 0 = low (half the points), 1 = medium, 2 = high
     void set_quality(int quality);
     // New scene (after a mission load): creates the MultiMeshInstance3D under parent, forgets all trails.
     void attach(godot::Node3D *parent);
@@ -43,7 +43,7 @@ public:
     int trail_count() const { return (int)trails.size() - (int)free_list.size(); }
 
 private:
-    enum Style : uint8_t { STYLE_WINGTIP, STYLE_MISSILE, STYLE_FLARE, STYLE_DAMAGE, STYLE_DEATH_SMOKE, STYLE_DEATH_FIRE };
+    enum Style : uint8_t { STYLE_WINGTIP, STYLE_MISSILE, STYLE_FLARE, STYLE_DAMAGE };
     enum Owner : uint8_t { OWNER_AIRPLANE, OWNER_WEAPON };
 
     struct Point {
@@ -77,7 +77,7 @@ private:
         float interval;   // seconds between recorded points (medium quality)
         float fade_pow;   // alpha = alpha0 * (1 - age/life)^fade_pow
         float min_px;     // minimum on-screen width; negative = widen without fading (thin lines)
-        int pass;         // draw order: 0 smoke, 1 fire, 2 lines
+        int pass;         // draw order: 0 smoke, 2 lines
     };
     static const StyleDef STYLES[];
 
@@ -98,7 +98,6 @@ private:
     std::vector<float> weapon_life;              // per weapon slot: lifeRemain at the last record
 
     float interval_mult = 1.0f;
-    float death_life_mult = 1.0f;
 
     godot::MultiMeshInstance3D *node = nullptr;
     godot::Ref<godot::MultiMesh> multimesh;

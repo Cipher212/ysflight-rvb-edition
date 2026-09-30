@@ -5,18 +5,21 @@
 // Each DNM model becomes a small node tree (one MeshInstance3D per DNM node); only changed values are
 // pushed to Godot (set_transform / set_visible always notify the scene tree and renderer).
 //   - Aircraft: every frame, including hardpoint stores; the player's exterior uses back-face culled
-//     materials in cockpit view, plus the cockpit shell (like YS SimDrawAirplane).
+//     materials in cockpit view, plus the cockpit shell (like YS SimDrawAirplane). Afterburner parts
+//     are drawn as flames with heat haze (burner_mesh.h).
 //   - Ground objects: time-sliced by camera distance (every frame < 2.5 km, every 4th < 8 km, every 16th
 //     beyond); settled single-node static props are never touched again.
 //   - Weapons: keyed by weapon slot; visuals of finished weapons go to a per-model pool for reuse.
 
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <godot_cpp/classes/mesh_instance3d.hpp>
 #include <godot_cpp/classes/node3d.hpp>
 
+#include "render/burner_mesh.h"
 #include "render/materials.h"
 #include "render/shell_mesh.h"
 
@@ -45,6 +48,8 @@ public:
     void sync(FsSimulation *sim, const MotionInterp &interp, const YsVec3 &camera_pos);
 
     void set_cockpit_mode(bool enabled);
+    // An aircraft was deleted from the sim (AI respawn wreck clean-up): free its nodes.
+    void forget_airplane(unsigned int key);
 
     // A degenerate triangle drawn with the cockpit materials for the first frames after load, so their
     // shaders are compiled before the player first presses F1.
@@ -79,8 +84,13 @@ private:
     void sync_grounds(FsSimulation *sim, const MotionInterp &interp, const YsVec3 &camera_pos);
     void sync_weapons(FsSimulation *sim, const MotionInterp &interp);
 
-    EntityVisual create_visual(FsVisualDnm &vis, const godot::String &name, godot::Node3D *parent);
-    EntityVisual *get_or_create(VisualTable &table, unsigned int key, FsVisualDnm &vis, godot::Node3D *parent, const char *prefix);
+    // AIRCRAFT: afterburner parts get the flame mesh (burner_mesh.h) instead of YS's cone, and the model gets
+    // baked shading (model_shading.h); GROUND: baked shading; PLAIN: as YS draws it (weapons, cockpit).
+    enum class VisualKind { PLAIN, AIRCRAFT, GROUND };
+    EntityVisual create_visual(FsVisualDnm &vis, const godot::String &name, godot::Node3D *parent,
+                               VisualKind kind = VisualKind::PLAIN);
+    EntityVisual *get_or_create(VisualTable &table, unsigned int key, FsVisualDnm &vis, godot::Node3D *parent, const char *prefix,
+                                VisualKind kind = VisualKind::PLAIN);
     void update_visual(EntityVisual &ev, FsVisualDnm &vis, const godot::Transform3D &root_tfm, bool is_alive, bool is_static_prop);
     void update_hardpoints(EntityVisual &ev, ::FsAirplane *air);
     static void set_root_visible(EntityVisual &ev, bool visible);
@@ -88,6 +98,9 @@ private:
 
     const Materials &mats;
     ShellMeshCache &mesh_cache;
+    BurnerMeshCache burner_meshes;
+    std::unordered_set<const void *> shaded_models; // DNMs whose baked shading is in the mesh cache
+    float burner_seed = 0.0f; // per-flame shader seed (golden-ratio steps), so flames don't flicker in sync
 
     godot::Node3D *airplanes_root = nullptr;
     godot::Node3D *grounds_root = nullptr;

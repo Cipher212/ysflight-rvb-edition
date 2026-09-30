@@ -28,8 +28,11 @@ constexpr int FLOATS_PER_INSTANCE = 16; // transform 12 + colour 4
 const Color GUN_TRACER(1.0f, 0.78f, 0.22f, 0.96f);  // warm 20 mm tracer
 const Color DEBRIS_TRACER(1.0f, 0.48f, 0.14f, 0.90f);
 const Color MISSILE_GLOW(1.0f, 0.72f, 0.28f, 0.95f);
-const Color FLARE_GLOW(1.0f, 0.92f, 0.60f, 1.0f);
+const Color FLARE_GLOW(2.6f, 2.2f, 1.5f, 1.0f); // over 1.0 on purpose: the core burns out to white
+constexpr float FLARE_SIZE_M = 7.0f;             // + up to 30% flicker
 constexpr float MISSILE_GLOW_TAIL_M = 1.6f;
+const Color MUZZLE_GLOW(2.0f, 1.5f, 0.6f, 1.0f);
+constexpr float MUZZLE_SIZE_M = 1.4f; // + flicker
 
 // Two perpendicular quads along Z (-0.5 .. 0.5); UV.y = 0 at the front tip (-Z), 1 at the tail.
 Ref<ArrayMesh> crossed_fin_mesh(float half_width) {
@@ -174,12 +177,26 @@ void WeaponFxRenderer::draw(FsSimulation *sim, const MotionInterp &interp, uint6
         }
         const Transform3D wt = interp.wpn(w);
         const float r = flicker((unsigned int)(w - base), frame_number);
-        const float size = missile ? 2.2f + 0.9f * r : 3.2f + 1.2f * r;
+        const float size = missile ? 2.2f + 0.9f * r : FLARE_SIZE_M * (1.0f + 0.3f * r);
         const Vector3 pos = wt.origin + wt.basis.get_column(2) * (missile ? MISSILE_GLOW_TAIL_M : 0.0f); // Godot +Z = tail
         write_instance(gb + ng * FLOATS_PER_INSTANCE, Transform3D(Basis().scaled(Vector3(size, size, size)), pos),
                        missile ? MISSILE_GLOW : FLARE_GLOW);
         ++ng;
     }
+    // Muzzle flash at the gun position from the aircraft's DAT ("MACHNGUN") while it fires
+    FsAirplane *air = nullptr;
+    while ((air = sim->FindNextAirplane(air)) != nullptr && ng < MAX_GLOWS) {
+        if (air->IsAlive() != YSTRUE || air->Prop().IsFiringGun() != YSTRUE) {
+            continue;
+        }
+        YsVec3 gun, gun_dir;
+        air->Prop().GetGunPosition(gun, gun_dir);
+        const float size = MUZZLE_SIZE_M * (0.6f + 0.8f * flicker(air->SearchKey() + 7919u, frame_number));
+        const Vector3 pos = interp.air(air).xform(ys_to_godot_pos(gun));
+        write_instance(gb + ng * FLOATS_PER_INSTANCE, Transform3D(Basis().scaled(Vector3(size, size, size)), pos), MUZZLE_GLOW);
+        ++ng;
+    }
+
     if (nt > 0) {
         tracer_mm->set_buffer(tracer_buf);
     }

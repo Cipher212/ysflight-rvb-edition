@@ -26,19 +26,15 @@ struct Emission {
 };
 constexpr double CONTRAIL_ALT_M = 8000.0;
 constexpr float DAMAGE_SMOKE_FROM = 0.35f; // damage (0..1) at which a flying aircraft starts to smoke
-constexpr Emission VAPOR = {1.0f / 30.0f, 1.0f, 0.25f, 0.25f, 0.9f};    // high-G wingtip lines (YS: 0.5 s)
+constexpr Emission VAPOR = {1.0f / 30.0f, 1.0f, 0.175f, 0.175f, 0.9f};  // high-G wingtip lines (YS: 0.5 s; user: 30 % thinner)
 constexpr Emission CONTRAIL = {0.2f, 10.0f, 0.4f, 4.0f, 0.55f};         // wingtip lines above CONTRAIL_ALT_M
 constexpr Emission MISSILE = {0.1f, 5.0f, 1.0f, 6.0f, 0.75f};           // YS: a point per 0.1 s, 5 s, white, alpha 0.7
 constexpr Emission ROCKET = {0.1f, 2.5f, 0.8f, 4.0f, 0.7f};
 constexpr Emission FLARE = {0.1f, 2.5f, 0.8f, 4.0f, 0.6f};
 constexpr Emission DAMAGE = {0.12f, 4.0f, 2.0f, 10.0f, 0.8f};          // life + 3 s * damage
-constexpr Emission DEATH_SMOKE = {0.1f, 12.0f, 4.0f, 40.0f, 0.95f};    // narrow at the jet, spreads fast
-constexpr Emission DEATH_FIRE = {1.0f / 30.0f, 0.45f, 4.5f, 1.0f, 1.0f};
 const Color WHITE_LINE(1.0f, 1.0f, 1.0f);
 const Color MISSILE_SMOKE(0.93f, 0.93f, 0.93f);
 const Color FLARE_SMOKE(1.0f, 0.97f, 0.9f);
-const Color DEATH_SMOKE_COLOR(0.035f, 0.035f, 0.035f);
-const Color FIRE_COLOR(1.0f, 0.62f, 0.15f);
 constexpr float MISSILE_TAIL_M = 1.8f; // emitter behind the missile's origin (Godot +Z = tail)
 constexpr float ROCKET_TAIL_M = 1.0f;
 constexpr float MAX_DRAW_DIST_M = 40000.0f;
@@ -47,7 +43,7 @@ constexpr float MAX_DRAW_DIST_M = 40000.0f;
 constexpr int FLOATS_PER_SEGMENT = 20; // transform 12 + colour 4 + custom 4
 constexpr int MIN_CAPACITY = 1024;
 
-enum SourceKind : uint64_t { SRC_TIP_R = 1, SRC_TIP_L, SRC_DAMAGE, SRC_DEATH_SMOKE, SRC_DEATH_FIRE, SRC_WEAPON = 16 };
+enum SourceKind : uint64_t { SRC_TIP_R = 1, SRC_TIP_L, SRC_DAMAGE, SRC_WEAPON = 16 };
 
 uint64_t source_key(SourceKind kind, unsigned int id) {
     return ((uint64_t)kind << 32) | (uint64_t)id;
@@ -66,17 +62,14 @@ struct DrawPoint {
 
 // interval (s), fade_pow, min_px, pass
 const TrailRenderer::StyleDef TrailRenderer::STYLES[] = {
-    {VAPOR.interval, 2.0f, -1.5f, 2},      // STYLE_WINGTIP (quadratic fade like YS vapour)
+    {VAPOR.interval, 2.0f, -1.05f, 2},     // STYLE_WINGTIP (quadratic fade like YS vapour)
     {MISSILE.interval, 1.3f, 1.5f, 0},     // STYLE_MISSILE
     {FLARE.interval, 1.5f, 1.5f, 0},       // STYLE_FLARE
     {DAMAGE.interval, 1.5f, 2.0f, 0},      // STYLE_DAMAGE
-    {DEATH_SMOKE.interval, 1.2f, 3.0f, 0}, // STYLE_DEATH_SMOKE
-    {DEATH_FIRE.interval, 1.5f, 2.0f, 1},  // STYLE_DEATH_FIRE
 };
 
 void TrailRenderer::set_quality(int quality) {
     interval_mult = quality <= 0 ? 2.0f : (quality >= 2 ? 0.75f : 1.0f);
-    death_life_mult = quality <= 0 ? 0.6f : 1.0f;
 }
 
 void TrailRenderer::attach(Node3D *parent) {
@@ -206,20 +199,23 @@ void TrailRenderer::record_airplanes(FsSimulation *sim, double now) {
             emit(source_key(SRC_TIP_L, key), STYLE_WINGTIP, OWNER_AIRPLANE, key, tip_l, WHITE_LINE, pp, raw.xform(tip_l), now);
         }
 
+        // Smoke comes out of the aircraft's smoke generator point (DAT "SMOKEGEN", at the exhaust on RvB jets)
+        Vector3 smoke_local;
+        if (prop.GetNumSmokeGenerator() > 0) {
+            YsVec3 smk;
+            prop.GetSmokeGeneratorPosition(smk, 0);
+            smoke_local = ys_to_godot_pos(smk);
+        }
+        const Vector3 smoke_world = raw.xform(smoke_local);
+
         const float damage = damage_fraction(air);
         if (!dying && damage >= DAMAGE_SMOKE_FROM) {
             const float d = (damage - DAMAGE_SMOKE_FROM) / (1.0f - DAMAGE_SMOKE_FROM);
             const float shade = 0.30f + (0.08f - 0.30f) * d; // dark grey -> near black with damage
             const PointParams pp{DAMAGE.life + 3.0f * damage, DAMAGE.w0, DAMAGE.w1, DAMAGE.alpha};
-            emit(source_key(SRC_DAMAGE, key), STYLE_DAMAGE, OWNER_AIRPLANE, key, Vector3(), Color(shade, shade, shade), pp, raw.origin, now);
+            emit(source_key(SRC_DAMAGE, key), STYLE_DAMAGE, OWNER_AIRPLANE, key, smoke_local, Color(shade, shade, shade), pp, smoke_world, now);
         }
-
-        if (dying) {
-            const PointParams smoke{DEATH_SMOKE.life * death_life_mult, DEATH_SMOKE.w0, DEATH_SMOKE.w1, DEATH_SMOKE.alpha};
-            const PointParams fire{DEATH_FIRE.life, DEATH_FIRE.w0, DEATH_FIRE.w1, DEATH_FIRE.alpha};
-            emit(source_key(SRC_DEATH_SMOKE, key), STYLE_DEATH_SMOKE, OWNER_AIRPLANE, key, Vector3(), DEATH_SMOKE_COLOR, smoke, raw.origin, now);
-            emit(source_key(SRC_DEATH_FIRE, key), STYLE_DEATH_FIRE, OWNER_AIRPLANE, key, Vector3(), FIRE_COLOR, fire, raw.origin, now);
-        }
+        // Shot down (spinning): fire + smoke are puffs in fx/death_fx.gd (PS2-style), not ribbons.
     }
 }
 
