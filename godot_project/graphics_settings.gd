@@ -14,7 +14,7 @@ class_name GraphicsSettings
 #   - fx_density: effects quality Low/Medium/High -> main.set_effects_quality (trail points, puff pools).
 #   - EFFECT_KEYS: effects for stronger PCs, each on/off (on in the Medium and High presets, off in Low):
 #     aircraft shadows (C++), cloud shadows / water shine (global shader uniforms), heat haze (camera
-#     cull layer), sun & explosion glare, speed lines & mist (fx/ nodes).
+#     cull layer), sun & explosion glare (fx/ nodes).
 #   - graphics_preset: Synchronises Low/Medium/High presets or sets Custom on edit.
 #
 # BENCHMARK MODE:
@@ -23,7 +23,7 @@ class_name GraphicsSettings
 #   handled solely by the benchmark runner.
 # ==============================================================================
 
-const EFFECT_KEYS := ["aircraft_shadows", "cloud_shadows", "water_shine", "heat_haze", "lens_glare", "speed_lines"]
+const EFFECT_KEYS := ["aircraft_shadows", "cloud_shadows", "water_shine", "heat_haze", "lens_glare"]
 
 var main: Node = null
 var controls: Node = null
@@ -212,5 +212,3 @@ func _apply_effect(key: String, on: bool) -> void:
 		"lens_glare":
 			main.sun_glare.enabled = on
 			main.blast_glow.enabled = on
-		"speed_lines":
-			main.speed_streaks.enabled = on

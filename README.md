@@ -13,7 +13,7 @@ features. Right now you can set up and fly an offline RvB event against the AI o
 - **Afterburners:** bright flames with shock diamonds, plus heat shimmer behind them.
 - **New look:** the sun and distant hills in the sky, sea all the way to the horizon, a grittier Ace
   Combat-style colour grade, drifting cloud shadows, sparkling water, shading on aircraft and buildings,
-  YSFlight-style aircraft shadows, sun and explosion glare, speed lines and mist.
+  YSFlight-style aircraft shadows and sun and explosion glare.
 - **Spectator cameras** (F5 / F6) stay locked on the aircraft you picked.
 - **New Graphics options** to switch each of the new effects off on slower PCs.
 - **Main menu and offline events** (in the RvB website's style): pick your team and callsign, the event
@@ -92,7 +92,7 @@ Full key list: see [Controls](#controls-ysflight-defaults) below.
 - Open **Settings** and in the **Graphics** section set **Graphics Preset** to **Low**. This lowers the
   3D resolution a little and switches the heavier effects off.
 - Or keep **Medium** and untick single effects in the same section: **Aircraft Shadows**, **Cloud
-  Shadows**, **Water Shine**, **Afterburner Heat Haze**, **Sun & Explosion Glare**, **Speed Lines & Mist**.
+  Shadows**, **Water Shine**, **Afterburner Heat Haze**, **Sun & Explosion Glare**.
 - On laptops: plug in the charger and set Windows to **Best performance** (battery icon).
 - The FPS readout can be hidden in **Settings > HUD > Show FPS / Latency**.
 

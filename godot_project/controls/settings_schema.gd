@@ -386,13 +386,6 @@ const SETTINGS: Array[Dictionary] = [
 		"type": "bool",
 		"default": true
 	},
-	{
-		"key": "speed_lines",
-		"label": "Speed Lines & Mist",
-		"section": "Graphics",
-		"type": "bool",
-		"default": true
-	},
 
 	# --- HUD ---
 	{

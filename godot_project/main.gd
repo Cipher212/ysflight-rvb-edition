@@ -34,7 +34,6 @@ const EventMission = preload("res://core/event_mission.gd")
 const EventSessionScript = preload("res://core/event_session.gd")
 const EventOverlayScript = preload("res://ui/event_overlay.gd")
 const SpawnMenuScript = preload("res://ui/spawn_menu.gd")
-const SpeedStreaksScript = preload("res://fx/speed_streaks.gd")
 const SunGlareScript = preload("res://fx/sun_glare.gd")
 const BlastGlowScript = preload("res://fx/blast_glow.gd")
 
@@ -65,8 +64,7 @@ var _puffs: Node3D = null
 var _explosions: Node3D = null
 var _crashes: Node = null
 var _death_fx: Node3D = null
-var speed_streaks: MultiMeshInstance3D = null # Graphics settings switch these (graphics_settings.gd)
-var sun_glare: MeshInstance3D = null
+var sun_glare: MeshInstance3D = null # Graphics settings switch these (graphics_settings.gd)
 var blast_glow: MeshInstance3D = null
 var _sun: DirectionalLight3D = null
 var _prewarm_left := EFFECT_PREWARM_FRAMES
@@ -137,9 +135,6 @@ func _ready() -> void:
 	_death_fx = DeathFXScript.new()
 	add_child(_death_fx)
 	_death_fx.setup(_puffs)
-	speed_streaks = SpeedStreaksScript.new()
-	add_child(speed_streaks)
-	speed_streaks.setup()
 	sun_glare = SunGlareScript.new()
 	sun_glare.setup(camera, _sun)
 
@@ -248,12 +243,11 @@ func _process(delta: float) -> void:
 	_explosions.update(delta, explosions)
 	_crashes.update(delta, fx_state["crashes"])
 	_death_fx.update(delta, fx_state["aircraft"])
-	speed_streaks.update(delta, camera, camera_rig.is_at_player(), tel)
 	sun_glare.update()
 	blast_glow.update(delta)
 	if _prewarm_left > 0:
 		_prewarm_left -= 1
-		for fx in [sun_glare, blast_glow, speed_streaks]: # each hides itself again on its next update
+		for fx in [sun_glare, blast_glow]: # each hides itself again on its next update
 			fx.visible = _prewarm_left > 0
 	var t3 := Time.get_ticks_usec()
 	_update_hud(delta, player_tfm, tel, airplanes)

@@ -23,7 +23,9 @@ const float GLINT_PATH = 0.08;          // faint sun path on the water
 const float GLITTER = 2.0;              // sparkles inside the sun's reflection
 const float GLITTER_CELL = 0.0025;      // sparkle size vs distance (~2 px at 1080p)
 const float GLITTER_RATE = 7.0;         // twinkle speed (each sparkle adds its own random share)
-const float GLINT_ZONE = 0.85;          // cos of the angle from the sun's mirror image where glint is computed
+const float GLINT_ZONE = -0.3;          // cos of the angle from the sun's mirror image where sparkles start...
+const float GLINT_ZONE_FULL = 0.6;      // ...and reach full strength (soft edge: no visible cut-off)
+const float GLITTER_OFF_SUN = 0.35;     // sparkle brightness away from the sun's reflection (1 = in it)
 const float WAVE_SLOPE = 0.06;          // small waves for the glint (fade out with distance: no shimmer noise)
 const float WAVE_SIZE = 75.0;           // m
 const float WAVE_DRIFT = 0.05;          // wave pattern drift (noise units per second)
@@ -63,17 +65,20 @@ float gfx_sparkles(vec2 p, float time) {
 	return (1.0 - smoothstep(0.08, 0.25, length(f))) * twinkle;
 }
 
-// Sea shading: turns col towards the sky haze at grazing angles and, near the sun's reflection, adds the glint
-// to emission: a faint path plus pixel-sized sparkles scattered at random that twinkle on small noise waves.
+// Sea shading: turns col towards the sky haze at grazing angles and adds the glint to emission: a faint path in
+// the sun's reflection plus pixel-sized sparkles that twinkle over a wide area around it (so the sea below the
+// player glitters too, not only a patch far off towards the sun), fading softly at the edge and with distance.
 void water(inout vec3 col, inout vec3 emission, vec3 world, vec3 camera, float time) {
 	vec3 to_eye = camera - world;
 	float dist = length(to_eye);
 	vec3 v = to_eye / max(dist, 0.001);
 	col = mix(col, sky_haze, pow(1.0 - max(v.y, 0.0), 5.0) * WATER_SHEEN);
 	vec3 sun = normalize(sun_direction);
-	if (dot(reflect(-v, vec3(0.0, 1.0, 0.0)), sun) < GLINT_ZONE) {
-		return; // far from the sun's reflection: no waves or sparkles to compute
+	float mirror = dot(reflect(-v, vec3(0.0, 1.0, 0.0)), sun);
+	if (mirror < GLINT_ZONE) {
+		return; // facing away from the sun's reflection: no waves or sparkles to compute
 	}
+	float zone = smoothstep(GLINT_ZONE, GLINT_ZONE_FULL, mirror);
 	vec2 w = world.xz;
 	float slope = WAVE_SLOPE * (1.0 - smoothstep(WAVE_FADE * 0.5, WAVE_FADE, dist));
 	vec2 wq = ROT_A * w / WAVE_SIZE + time * WAVE_DRIFT;
@@ -83,5 +88,6 @@ void water(inout vec3 col, inout vec3 emission, vec3 world, vec3 camera, float t
 	float cell = max(dist * GLITTER_CELL, 0.3);
 	float spark = gfx_sparkles(ROT_A * w / cell, time) + gfx_sparkles(ROT_B * w / (cell * 0.7) + 5.3, time);
 	float fade = 1.0 - smoothstep(GLITTER_RANGE * 0.5, GLITTER_RANGE, dist);
-	emission += GLINT_COLOR * (pow(s, 20.0) * GLINT_PATH + pow(s, 60.0) * min(spark, 1.0) * fade * GLITTER);
+	float glitter = min(spark, 1.0) * fade * GLITTER * mix(GLITTER_OFF_SUN, 1.0, pow(s, 20.0));
+	emission += GLINT_COLOR * zone * (pow(s, 20.0) * GLINT_PATH + glitter);
 }
