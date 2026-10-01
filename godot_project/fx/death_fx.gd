@@ -1,91 +1,125 @@
 extends Node3D
 
-const PuffSystem := preload("res://fx/puff_system.gd")
-const FIRE_SHADER := preload("res://shaders/fire_puff.gdshader")
+const FIRE_SHADER := preload("res://shaders/fire_core.gdshader")
+const SHARD_SHADER := preload("res://shaders/debris_shard.gdshader")
 
-# Shot-down aircraft (spinning down, YS FSDEADSPIN/FLATSPIN) burn PS2 / Ace Combat style: a short additive
-# fire puff every 0.08-0.1 s at the burning point (the aircraft's DAT SMOKEGEN), and dark smoke puffs just
-# behind it that grow and grey out. Fire quads have their own ring of MAX_FIRE_QUADS (never more alive at
-# once in the whole game); smoke uses the shared puff pool. Input: "aircraft" of get_aircraft_fx_state().
+# Shot-down aircraft (spinning down, YS FSDEADSPIN/FLATSPIN): a flickering fireball over the airframe (one quad
+# per burning jet, placed at its origin every frame) and, once at the kill, a burst of flat charred shards that
+# tumble and fall (GPU-aged ring, nothing done per shard afterwards). The smoke plume is a continuous ribbon from
+# the smoke point, drawn by the C++ trail renderer (render/trail_renderer.cpp, STYLE_DEATH).
+# Input: "aircraft" of get_aircraft_fx_state().
 
 const STRIDE := 21              # get_aircraft_fx_state() aircraft row (see aircraft_fx_query.h)
+const COL_POS := 1
+const COL_VEL := 4
 const COL_STATE := 8            # 1 = dying
-const COL_FORWARD := 14
-const COL_SMOKE_POINT := 18
-const MAX_FIRE_QUADS := 32
-const FIRE_INTERVAL := Vector2(0.08, 0.1) # s, random in this range
-const FIRE_LIFE := 0.3
-const FIRE_SIZE := Vector2(2.5, 5.0)      # m, start -> end
-const SMOKE_INTERVAL := 0.1               # s (doubled on low effects quality)
-const SMOKE_LIFE := Vector2(6.0, 8.0)
-const SMOKE_SIZE := Vector2(4.0, 25.0)
-const SMOKE_COLOR := Color(0.07, 0.07, 0.07, 0.9) # charcoal; greys out as it ages
-const SMOKE_GREY_OUT := 0.8
-const SMOKE_BEHIND_M := 3.0
+const COL_RADIUS := 13
+const MAX_FIRES := 32
+const UNUSED_FIRE := Transform3D(Basis(Vector3.ZERO, Vector3.ZERO, Vector3.ZERO), Vector3.ZERO) # radius 0: no pixels
+const MAX_SHARDS := 128
+const SHARDS := Vector2i(4, 8)          # per kill (low effects quality: the minimum)
+const SHARD_SIZE := Vector2(0.8, 2.2)   # m
+const SHARD_KICK := Vector2(12.0, 35.0) # m/s away from the aircraft, on top of its velocity
+const SHARD_SPIN := Vector2(4.0, 14.0)  # rad/s
+const SHARD_LIFE := Vector2(3.5, 5.5)   # s
+const SHARD_SHADE := Vector2(0.015, 0.09)
 
-var puffs: PuffSystem = null
 var quality: int = 1
-var fire_spawned: int = 0
-var smoke_spawned: int = 0
+var fires_burning: int = 0   # fireballs drawn this frame
+var fires_started: int = 0   # aircraft set on fire so far (tests)
+var shards_spawned: int = 0
 
 var _fire_mm := MultiMesh.new()
-var _fire_mat := ShaderMaterial.new()
-var _fire_head: int = 0
+var _shard_mm := MultiMesh.new()
+var _shard_mat := ShaderMaterial.new()
+var _shard_head: int = 0
 var _time: float = 0.0
-var _timers: Dictionary = {} # aircraft key -> PackedFloat32Array [time to next fire, time to next smoke]
+var _burning: Dictionary = {} # aircraft key -> fireball seed
 var _rng := RandomNumberGenerator.new()
-
-func setup(p_puffs: PuffSystem) -> void:
-	puffs = p_puffs
 
 func _ready() -> void:
 	name = "DeathFX"
 	_rng.randomize()
-	_fire_mat.shader = FIRE_SHADER
+	var fire_mat := ShaderMaterial.new()
+	fire_mat.shader = FIRE_SHADER
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1.0, 1.0)
-	quad.material = _fire_mat
+	quad.material = fire_mat
 	_fire_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_fire_mm.mesh = quad
-	_fire_mm.instance_count = MAX_FIRE_QUADS
-	var dead := Transform3D(Basis(Vector3.ZERO, Vector3(0.0, 0.0, 0.1), Vector3(-1000.0, 0.0, 0.0)), Vector3.ZERO)
-	for i in MAX_FIRE_QUADS:
-		_fire_mm.set_instance_transform(i, dead)
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = _fire_mm
-	mmi.custom_aabb = AABB(Vector3(-1e7, -1e7, -1e7), Vector3(2e7, 2e7, 2e7))
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mmi)
+	_fire_mm.instance_count = MAX_FIRES
+	for i in MAX_FIRES: # always drawn (collapsed when unused): the shader is compiled at load, not at the first kill
+		_fire_mm.set_instance_transform(i, UNUSED_FIRE)
+	_add_instance_node("Fireballs", _fire_mm)
+
+	_shard_mat.shader = SHARD_SHADER
+	_shard_mm.transform_format = MultiMesh.TRANSFORM_3D
+	_shard_mm.use_colors = true
+	_shard_mm.mesh = _shard_mesh()
+	_shard_mm.instance_count = MAX_SHARDS
+	var dead := Transform3D(Basis(Vector3.ZERO, Vector3(1.0, 0.1, -1000.0), Vector3.ZERO), Vector3.ZERO)
+	for i in MAX_SHARDS:
+		_shard_mm.set_instance_transform(i, dead)
+	_add_instance_node("Shards", _shard_mm)
 
 func update(delta: float, aircraft: PackedFloat32Array) -> void:
 	_time += delta
-	_fire_mat.set_shader_parameter("now", _time)
+	_shard_mat.set_shader_parameter("now", _time)
+	var n := 0
 	var seen := {}
 	for i in range(0, aircraft.size(), STRIDE):
 		if aircraft[i + COL_STATE] < 0.5:
 			continue
 		var key := int(aircraft[i])
 		seen[key] = true
-		var root := Vector3(aircraft[i + COL_SMOKE_POINT], aircraft[i + COL_SMOKE_POINT + 1], aircraft[i + COL_SMOKE_POINT + 2])
-		var fwd := Vector3(aircraft[i + COL_FORWARD], aircraft[i + COL_FORWARD + 1], aircraft[i + COL_FORWARD + 2])
-		var t: PackedFloat32Array = _timers.get(key, PackedFloat32Array([0.0, 0.0]))
-		t[0] -= delta
-		if t[0] <= 0.0:
-			_spawn_fire(root)
-			t[0] = _rng.randf_range(FIRE_INTERVAL.x, FIRE_INTERVAL.y)
-		t[1] -= delta
-		if t[1] <= 0.0:
-			puffs.spawn(root - fwd * SMOKE_BEHIND_M, Vector3(0.0, 1.0, 0.0), SMOKE_SIZE.x, SMOKE_SIZE.y,
-				_rng.randf_range(SMOKE_LIFE.x, SMOKE_LIFE.y), SMOKE_COLOR, 0.0, SMOKE_GREY_OUT)
-			smoke_spawned += 1
-			t[1] = SMOKE_INTERVAL * (2.0 if quality <= 0 else 1.0)
-		_timers[key] = t
-	for key in _timers.keys():
+		var pos := Vector3(aircraft[i + COL_POS], aircraft[i + COL_POS + 1], aircraft[i + COL_POS + 2])
+		if not _burning.has(key):
+			_burning[key] = _rng.randf_range(0.0, 100.0)
+			fires_started += 1
+			var vel := Vector3(aircraft[i + COL_VEL], aircraft[i + COL_VEL + 1], aircraft[i + COL_VEL + 2])
+			_spawn_shards(pos, vel)
+		if n < MAX_FIRES:
+			# MODEL_MATRIX packing: see shaders/fire_core.gdshader
+			var info := Vector3(aircraft[i + COL_RADIUS], _burning[key], 0.0)
+			_fire_mm.set_instance_transform(n, Transform3D(Basis(info, Vector3.ZERO, Vector3.ZERO), pos))
+			n += 1
+	for i in range(n, fires_burning):
+		_fire_mm.set_instance_transform(i, UNUSED_FIRE)
+	fires_burning = n
+	for key in _burning.keys():
 		if not seen.has(key):
-			_timers.erase(key)
+			_burning.erase(key)
 
-# MODEL_MATRIX packing: see shaders/fire_puff.gdshader
-func _spawn_fire(pos: Vector3) -> void:
-	_fire_mm.set_instance_transform(_fire_head, Transform3D(Basis(Vector3.ZERO, Vector3(FIRE_SIZE.x, FIRE_SIZE.y, FIRE_LIFE), Vector3(_time, 0.0, 0.0)), pos))
-	_fire_head = (_fire_head + 1) % MAX_FIRE_QUADS
-	fire_spawned += 1
+# MODEL_MATRIX packing: see shaders/debris_shard.gdshader
+func _spawn_shards(pos: Vector3, vel: Vector3) -> void:
+	var count: int = SHARDS.x if quality <= 0 else _rng.randi_range(SHARDS.x, SHARDS.y)
+	for k in count:
+		var dir := Vector3(_rng.randf_range(-1.0, 1.0), _rng.randf_range(-0.5, 1.0), _rng.randf_range(-1.0, 1.0)).normalized()
+		var axis := Vector3(_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0)).normalized()
+		var data := Vector3(_rng.randf_range(SHARD_SIZE.x, SHARD_SIZE.y), _rng.randf_range(SHARD_LIFE.x, SHARD_LIFE.y), _time)
+		var v0 := vel + dir * _rng.randf_range(SHARD_KICK.x, SHARD_KICK.y)
+		var spin := axis * _rng.randf_range(SHARD_SPIN.x, SHARD_SPIN.y)
+		_shard_mm.set_instance_transform(_shard_head, Transform3D(Basis(v0, data, spin), pos + dir * 2.0))
+		var shade := _rng.randf_range(SHARD_SHADE.x, SHARD_SHADE.y)
+		_shard_mm.set_instance_color(_shard_head, Color(shade, shade, shade * 0.95))
+		_shard_head = (_shard_head + 1) % MAX_SHARDS
+		shards_spawned += 1
+
+# One irregular flat triangle (scaled per shard in the shader).
+func _shard_mesh() -> ArrayMesh:
+	var verts := PackedVector3Array([Vector3(-0.5, -0.35, 0.0), Vector3(0.55, -0.2, 0.0), Vector3(-0.1, 0.6, 0.0)])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.surface_set_material(0, _shard_mat)
+	return mesh
+
+func _add_instance_node(node_name: String, mm: MultiMesh) -> void:
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = node_name
+	mmi.multimesh = mm
+	mmi.custom_aabb = AABB(Vector3(-1e7, -1e7, -1e7), Vector3(2e7, 2e7, 2e7))
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)

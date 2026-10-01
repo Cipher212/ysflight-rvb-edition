@@ -8,17 +8,62 @@ const RED := Color("#ff2d2d")
 const BLUE := Color("#2f62ff")
 const INK := Color("#04060d")
 const PALE := Color("#d9dfee")
+const DESIGN_SIZE := Vector2(1920.0, 1080.0) # every screen is laid out at this size, then scaled to the window
+const MIN_SCALE := 0.5
+const LOADING_NODE := "RvbLoading"
 
-# Full-screen root setup: theme, ink background, visible mouse.
+# Full-screen root setup: theme, ink background, visible mouse, scaled to the window.
 static func make_screen(root: Control) -> void:
 	root.theme = THEME
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	fit_to_window(root)
 	var bg := ColorRect.new()
 	bg.color = INK
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(bg)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+# Lays root out at DESIGN_SIZE (same aspect as the window) and scales it to fill the window, so a menu looks the
+# same at any resolution. Call on a menu's root Control; re-fits when the window is resized.
+static func fit_to_window(root: Control) -> void:
+	root.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	var apply := func() -> void:
+		var win: Vector2 = root.get_viewport().get_visible_rect().size
+		var s: float = maxf(minf(win.x / DESIGN_SIZE.x, win.y / DESIGN_SIZE.y), MIN_SCALE)
+		root.scale = Vector2(s, s)
+		root.position = Vector2.ZERO
+		root.size = win / s
+	var hook := func() -> void:
+		apply.call()
+		root.get_viewport().size_changed.connect(apply)
+	if root.is_inside_tree():
+		hook.call()
+	else:
+		root.tree_entered.connect(hook, CONNECT_ONE_SHOT)
+
+# Loading screen for the seconds main.tscn takes to load a map. Added to the tree root, so it survives the scene
+# change; main.gd removes it (hide_loading) once the first frame of the flight is ready. Call it, wait two frames
+# so it is drawn, then change scene.
+static func show_loading(tree: SceneTree, title: String, detail: String) -> void:
+	var layer := CanvasLayer.new()
+	layer.name = LOADING_NODE
+	layer.layer = 200
+	tree.root.add_child(layer)
+	var root := Control.new()
+	layer.add_child(root)
+	make_screen(root)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(center)
+	var body := panel(center, title)
+	body.custom_minimum_size = Vector2(620, 0)
+	body.add_child(label("LOADING", "BigNumber"))
+	body.add_child(label(detail, "DimLabel"))
+
+static func hide_loading(tree: SceneTree) -> void:
+	var layer := tree.root.get_node_or_null(LOADING_NODE)
+	if layer != null:
+		layer.queue_free()
 
 static func label(text: String, variation: String = "") -> Label:
 	var l := Label.new()

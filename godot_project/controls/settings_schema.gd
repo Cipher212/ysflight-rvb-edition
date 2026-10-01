@@ -284,6 +284,13 @@ const SETTINGS: Array[Dictionary] = [
 		"default": true
 	},
 	{
+		"key": "all_camera_views",
+		"label": "All Camera Views (F3-F8, [ ] Pick Aircraft)",
+		"section": "Display",
+		"type": "bool",
+		"default": false
+	},
+	{
 		"key": "show_input_overlay",
 		"label": "Show Input Overlay",
 		"section": "Display",
@@ -368,6 +375,13 @@ const SETTINGS: Array[Dictionary] = [
 	{
 		"key": "water_shine",
 		"label": "Water Shine",
+		"section": "Graphics",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "ground_detail",
+		"label": "Ground Detail",
 		"section": "Graphics",
 		"type": "bool",
 		"default": true

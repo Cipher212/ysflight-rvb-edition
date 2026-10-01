@@ -1,11 +1,11 @@
 extends CanvasLayer
 
-# Mid-event spawn menu (offline RvB event): opens at the start, after Esc x2 and after being shot down.
-# Aircraft (your team's; the role comes from the aircraft), start position, loadout; FLY / SETTINGS / END EVENT.
-# The event keeps running behind it (core/event_session.gd never pauses). Remembers the last choice.
+# Spawn menu for an offline RvB event (core/event_session.gd: your team's aircraft, Esc x2, after being shot down)
+# and for free flight (core/free_flight_session.gd: every aircraft and start). Aircraft (the role comes from the
+# aircraft), start position, loadout; FLY / SETTINGS / end (END EVENT or EXIT TO MENU, confirmed). Events never pause
+# behind it; free flight does. Remembers the last choice.
 
 const Kit := preload("res://ui/ui_kit.gd")
-const EventConfig := preload("res://core/event_config.gd")
 const END_CONFIRM_S := 3.0
 
 var session: Node = null
@@ -22,14 +22,15 @@ var _end_armed_until := 0.0
 func setup(p_session: Node) -> void:
 	name = "SpawnMenu"
 	layer = 30
+	process_mode = Node.PROCESS_MODE_ALWAYS # free flight pauses behind it
 	session = p_session
 	visible = false
-	_aircraft = EventConfig.aircraft_for(session.catalog, session.player_team())
+	_aircraft = session.aircraft()
 	_starts = session.start_positions()
 
 	var root := Control.new()
 	root.theme = Kit.THEME
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	Kit.fit_to_window(root)
 	add_child(root)
 	var dim := ColorRect.new()
 	dim.color = Color(0.016, 0.024, 0.051, 0.55)
@@ -38,7 +39,7 @@ func setup(p_session: Node) -> void:
 	var center := CenterContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.add_child(center)
-	var body := Kit.panel(center, "SPAWN  /  " + session.player_team().to_upper() + " FORCE", session.player_team())
+	var body := Kit.panel(center, session.menu_title(), session.menu_team())
 	body.custom_minimum_size = Vector2(760, 0)
 
 	var names := []
@@ -56,26 +57,28 @@ func setup(p_session: Node) -> void:
 	Kit.row(body, "START", _start_opt)
 	_load_opt = Kit.options(session.LOADOUTS)
 	Kit.row(body, "LOADOUT", _load_opt)
-	_status = Kit.label("THE EVENT KEEPS RUNNING WHILE YOU CHOOSE", "DimLabel")
+	_status = Kit.label(session.menu_note(), "DimLabel")
 	body.add_child(_status)
 
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 10)
 	body.add_child(buttons)
-	var fly := Kit.button("FLY", "RedButton" if session.player_team() == "red" else "BlueButton", _fly)
+	var fly := Kit.button("FLY", "BlueButton" if session.menu_team() == "blue" else "RedButton", _fly)
 	fly.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	buttons.add_child(fly)
 	buttons.add_child(Kit.button("SETTINGS", "", func() -> void: session.open_settings()))
-	_end_btn = Kit.button("END EVENT", "", _end)
+	_end_btn = Kit.button(session.END_LABEL, "", _end)
 	buttons.add_child(_end_btn)
 	_update_role()
 
 	session.spawn_menu_requested.connect(_open)
+	if session.has_signal("menu_closed"):
+		session.menu_closed.connect(func() -> void: visible = false)
 
 func _open() -> void:
 	visible = true
 	_end_armed_until = 0.0
-	_end_btn.text = "END EVENT"
+	_end_btn.text = session.END_LABEL
 
 func _update_role() -> void:
 	if _aircraft.is_empty():
@@ -96,14 +99,14 @@ func _fly() -> void:
 func _end() -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if now < _end_armed_until:
-		session.end_event()
+		session.end_session()
 		return
 	_end_armed_until = now + END_CONFIRM_S
-	_end_btn.text = "CONFIRM END"
+	_end_btn.text = "CONFIRM"
 
-# "AI_BLUE_NORTH" -> "AIR: NORTH", "[IFF1]COLE_AFB_RUNWAY" -> "COLE AFB RUNWAY"
+# "AI_BLUE_NORTH" -> "BLUE AIR: NORTH", "[IFF1]COLE_AFB_RUNWAY" -> "COLE AFB RUNWAY"
 static func _pretty_start(stp: String) -> String:
 	var up := stp.to_upper()
 	if up.begins_with("AI_BLUE_") or up.begins_with("AI_RED_"):
-		return "AIR: " + up.get_slice("_", 2)
+		return up.get_slice("_", 1) + " AIR: " + up.get_slice("_", 2)
 	return stp.substr(stp.find("]") + 1).replace("_", " ")

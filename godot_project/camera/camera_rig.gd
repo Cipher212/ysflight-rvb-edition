@@ -1,8 +1,9 @@
 extends Node
 
 # The game camera: view modes, head look / orbit / zoom input, and placing the Camera3D every frame.
-# Normal play uses F1 (cockpit) and F2 (exterior); F3-F8 are the replay / spectator cameras, available in
-# --ai-player mode (and used by the benchmark's camera script).
+# Normal play uses F1 (cockpit) and F2 (exterior), as RvB is flown; F3-F8 are the replay / spectator cameras,
+# available in --ai-player mode (and used by the benchmark's camera script) or in normal play with the Display
+# setting "All Camera Views" (F3-F8 and [ ] only: the mouse and Tab stay the stick and afterburner).
 # Positions come from the sim's interpolated transforms, the same ones the models are drawn with.
 
 enum CamMode {
@@ -139,6 +140,7 @@ func set_mode(new_mode: int, same_key_pressed: bool = false) -> void:
 # Spectator (--ai-player) camera: mouse drag orbits / looks, wheel zooms, F1-F8 switch, Tab / [ ] cycle targets.
 func _unhandled_input(event: InputEvent) -> void:
 	if not _spectator_input:
+		_all_views_input(event)
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT or event.button_index == MOUSE_BUTTON_LEFT:
@@ -173,6 +175,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			_cycle_target(1)
 		elif event.keycode == KEY_BRACKETLEFT:
 			_cycle_target(-1)
+
+func _all_views_input(event: InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and not event.echo):
+		return
+	if _controls == null or not bool(_controls.get_value("all_camera_views", false)):
+		return
+	if event.keycode >= KEY_F3 and event.keycode <= KEY_F8:
+		var m: int = CamMode.COCKPIT + (event.keycode - KEY_F1)
+		set_mode(m, mode == m)
+	elif event.keycode == KEY_BRACKETRIGHT:
+		_cycle_target(1)
+	elif event.keycode == KEY_BRACKETLEFT:
+		_cycle_target(-1)
 
 func _cycle_target(step: int) -> void:
 	match mode:

@@ -1,24 +1,26 @@
 extends CanvasLayer
-class_name SettingsPanel
 
-# ==============================================================================
-# PLACEHOLDER UI, will be replaced by the real menu later;
-# draws the Controls.SETTINGS list directly so settings remain the single source of truth.
-# ==============================================================================
+# Settings window (RvB style, logs/UI_scheme.md): section tabs on the left, the chosen section's rows on the right.
+# Rows are built from controls/settings_schema.gd (via controls.gd SETTINGS), the single source of truth; every
+# change goes straight to controls.set_value(). Opened from the home screen, the spawn menu and the Esc key.
 
 const ControlsScript = preload("res://controls.gd")
+const Kit := preload("res://ui/ui_kit.gd")
+const PANEL_SIZE := Vector2(1320, 840)
+const TAB_WIDTH := 270
+const KEY_WIDTH := 360
+const AMBER := Color("#ffb23d")
 
 var controls: Node = null
 
-var _panel: PanelContainer = null
-var _scroll_vbox: VBoxContainer = null
-
+var _pages: Dictionary = {}       # section -> VBoxContainer of rows
+var _tabs: Dictionary = {}        # section -> tab Button
+var _scroll: ScrollContainer = null
 var _float_widgets: Dictionary = {}
 var _bool_widgets: Dictionary = {}
 var _enum_widgets: Dictionary = {}
 var _binding_buttons: Dictionary = {}
 var _conflict_labels: Dictionary = {}
-
 var _listening_slot: Dictionary = {}
 
 func _init() -> void:
@@ -34,132 +36,78 @@ func setup(p_controls: Node) -> void:
 	_update_conflict_warnings()
 
 func _build_ui() -> void:
-	# Semi-transparent backdrop overlay to prevent clicks leaking
-	var backdrop := Control.new()
-	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(backdrop)
+	var root := Control.new()
+	root.theme = Kit.THEME
+	root.mouse_filter = Control.MOUSE_FILTER_STOP # no clicks through to the game or menu behind
+	add_child(root)
+	Kit.fit_to_window(root)
+	var dim := ColorRect.new()
+	dim.color = Color(0.016, 0.024, 0.051, 0.72)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(center)
+	var body := Kit.panel(center, "SETTINGS")
+	var frame: PanelContainer = body.get_parent().get_parent()
+	frame.custom_minimum_size = PANEL_SIZE
+	var solid: StyleBoxFlat = Kit.THEME.get_stylebox("panel", "PanelContainer").duplicate()
+	solid.bg_color.a = 0.97 # opaque: the menu or game behind would show through the rows
+	frame.add_theme_stylebox_override("panel", solid)
 
-	_panel = PanelContainer.new()
-	_panel.name = "SettingsPanelContainer"
-	# Centred panel container occupying ~70% of the screen
-	_panel.anchor_left = 0.15
-	_panel.anchor_top = 0.08
-	_panel.anchor_right = 0.85
-	_panel.anchor_bottom = 0.92
-	_panel.offset_left = 0
-	_panel.offset_top = 0
-	_panel.offset_right = 0
-	_panel.offset_bottom = 0
-	add_child(_panel)
+	var cols := HBoxContainer.new()
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cols.add_theme_constant_override("separation", 20)
+	body.add_child(cols)
+	var tab_col := VBoxContainer.new()
+	tab_col.custom_minimum_size = Vector2(TAB_WIDTH, 0)
+	tab_col.add_theme_constant_override("separation", 6)
+	cols.add_child(tab_col)
+	_scroll = ScrollContainer.new()
+	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	cols.add_child(_scroll)
+	var pages := VBoxContainer.new()
+	pages.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.add_child(pages)
 
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 20)
-	margin.add_theme_constant_override("margin_top", 16)
-	margin.add_theme_constant_override("margin_right", 20)
-	margin.add_theme_constant_override("margin_bottom", 16)
-	_panel.add_child(margin)
-
-	var root_vbox := VBoxContainer.new()
-	root_vbox.add_theme_constant_override("separation", 12)
-	margin.add_child(root_vbox)
-
-	# --- Header ---
-	var header_hbox := HBoxContainer.new()
-	var title_lbl := Label.new()
-	title_lbl.text = "Flight Controls & Simulation Settings"
-	title_lbl.add_theme_font_size_override("font_size", 20)
-	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header_hbox.add_child(title_lbl)
-
-	var esc_hint := Label.new()
-	esc_hint.text = "[Esc] / [Pad Start] to Close"
-	esc_hint.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	header_hbox.add_child(esc_hint)
-	root_vbox.add_child(header_hbox)
-
-	var sep_top := HSeparator.new()
-	root_vbox.add_child(sep_top)
-
-	# --- Scrollable Settings Area ---
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root_vbox.add_child(scroll)
-
-	_scroll_vbox = VBoxContainer.new()
-	_scroll_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_scroll_vbox.add_theme_constant_override("separation", 8)
-	scroll.add_child(_scroll_vbox)
-
-	# Populate sections and rows from ControlsScript.SETTINGS
-	var current_section: String = ""
+	var group := ButtonGroup.new()
 	for s in ControlsScript.SETTINGS:
 		var sec: String = s.get("section", "General")
-		if sec != current_section:
-			current_section = sec
-			_add_section_header(current_section)
+		if not _pages.has(sec):
+			var page := VBoxContainer.new()
+			page.add_theme_constant_override("separation", 10)
+			page.visible = _pages.is_empty()
+			pages.add_child(page)
+			_pages[sec] = page
+			var tab := Kit.button(sec.to_upper(), "", _show_section.bind(sec))
+			tab.toggle_mode = true
+			tab.button_group = group
+			tab.button_pressed = page.visible
+			tab.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			tab_col.add_child(tab)
+			_tabs[sec] = tab
+		_add_setting_row(_pages[sec], s)
 
-		_add_setting_row(s)
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 12)
+	body.add_child(footer)
+	var hint := Kit.label("ESC CLOSES  /  CHANGES SAVE AS YOU MAKE THEM", "DimLabel")
+	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hint.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	footer.add_child(hint)
+	footer.add_child(Kit.button("RESET TO DEFAULTS", "", _on_reset_pressed))
+	footer.add_child(Kit.button("CLOSE", "RedButton", _on_close_pressed))
 
-	# --- Footer ---
-	var sep_bottom := HSeparator.new()
-	root_vbox.add_child(sep_bottom)
+func _show_section(sec: String) -> void:
+	for k in _pages:
+		_pages[k].visible = k == sec
+	_scroll.scroll_vertical = 0
 
-	var footer_hbox := HBoxContainer.new()
-	footer_hbox.add_theme_constant_override("separation", 16)
-
-	var reset_btn := Button.new()
-	reset_btn.text = "Reset to Defaults"
-	reset_btn.custom_minimum_size = Vector2(160, 34)
-	reset_btn.pressed.connect(_on_reset_pressed)
-	footer_hbox.add_child(reset_btn)
-
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer_hbox.add_child(spacer)
-
-	var close_btn := Button.new()
-	close_btn.text = "Close & Save"
-	close_btn.custom_minimum_size = Vector2(140, 34)
-	close_btn.pressed.connect(_on_close_pressed)
-	footer_hbox.add_child(close_btn)
-
-	root_vbox.add_child(footer_hbox)
-
-func _add_section_header(title: String) -> void:
-	var sec_box := VBoxContainer.new()
-	sec_box.add_theme_constant_override("separation", 4)
-
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 10)
-	sec_box.add_child(spacer)
-
-	var lbl := Label.new()
-	lbl.text = title.to_upper()
-	lbl.add_theme_font_size_override("font_size", 15)
-	lbl.add_theme_color_override("font_color", Color(0.35, 1.0, 0.45))
-	sec_box.add_child(lbl)
-
-	var sep := HSeparator.new()
-	sec_box.add_child(sep)
-
-	_scroll_vbox.add_child(sec_box)
-
-func _add_setting_row(s: Dictionary) -> void:
+func _add_setting_row(page: VBoxContainer, s: Dictionary) -> void:
 	var key: String = s["key"]
-	var label_text: String = s.get("label", key)
-	var type: String = s.get("type", "string")
-
-	var row_hbox := HBoxContainer.new()
-	row_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var name_lbl := Label.new()
-	name_lbl.text = label_text
-	name_lbl.custom_minimum_size = Vector2(240, 0)
-	row_hbox.add_child(name_lbl)
-
-	match type:
+	var label_text: String = str(s.get("label", key)).to_upper()
+	match s.get("type", "string"):
 		"float":
 			var val: float = float(controls.get_value(key, s.get("default", 0.0)))
 			var slider := HSlider.new()
@@ -167,222 +115,140 @@ func _add_setting_row(s: Dictionary) -> void:
 			slider.max_value = float(s.get("max", 1.0))
 			slider.step = float(s.get("step", 0.05))
 			slider.value = val
-			slider.custom_minimum_size = Vector2(220, 0)
+			slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-
-			var val_lbl := Label.new()
-			val_lbl.text = "%.2f" % val
-			val_lbl.custom_minimum_size = Vector2(50, 0)
+			var val_lbl := Kit.label("%.2f" % val)
+			val_lbl.custom_minimum_size = Vector2(70, 0)
 			val_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-
-			slider.value_changed.connect(func(new_val: float):
+			slider.value_changed.connect(func(new_val: float) -> void:
 				val_lbl.text = "%.2f" % new_val
-				controls.set_value(key, new_val)
-			)
-
-			_float_widgets[key] = { "slider": slider, "label": val_lbl }
-
-			var val_hbox := HBoxContainer.new()
-			val_hbox.add_theme_constant_override("separation", 10)
-			val_hbox.add_child(slider)
-			val_hbox.add_child(val_lbl)
-			row_hbox.add_child(val_hbox)
-			_scroll_vbox.add_child(row_hbox)
-
+				controls.set_value(key, new_val))
+			_float_widgets[key] = {"slider": slider, "label": val_lbl}
+			var h := HBoxContainer.new()
+			h.add_theme_constant_override("separation", 14)
+			h.add_child(slider)
+			h.add_child(val_lbl)
+			Kit.row(page, label_text, h, KEY_WIDTH)
 		"bool":
-			var val: bool = bool(controls.get_value(key, s.get("default", false)))
 			var cb := CheckBox.new()
-			cb.button_pressed = val
-			cb.toggled.connect(func(pressed: bool):
-				controls.set_value(key, pressed)
-			)
+			cb.button_pressed = bool(controls.get_value(key, s.get("default", false)))
+			cb.toggled.connect(func(pressed: bool) -> void: controls.set_value(key, pressed))
 			_bool_widgets[key] = cb
-			row_hbox.add_child(cb)
-			_scroll_vbox.add_child(row_hbox)
-
+			Kit.row(page, label_text, cb, KEY_WIDTH)
 		"enum":
-			var val_str: String = str(controls.get_value(key, s.get("default", "")))
-			var opt := OptionButton.new()
 			var options: Array = s.get("options", [])
-			var selected_idx := 0
-			for i in range(options.size()):
-				var opt_name: String = str(options[i])
-				opt.add_item(opt_name, i)
-				if opt_name == val_str:
-					selected_idx = i
-
-			opt.selected = selected_idx
-			opt.item_selected.connect(func(idx: int):
-				var choice: String = str(options[idx])
-				controls.set_value(key, choice)
-			)
-			_enum_widgets[key] = opt
-			row_hbox.add_child(opt)
-			_scroll_vbox.add_child(row_hbox)
-
+			var names := []
+			for o in options:
+				names.append(str(o).to_upper())
+			var opt := Kit.options(names, maxi(options.find(str(controls.get_value(key, s.get("default", "")))), 0))
+			opt.item_selected.connect(func(idx: int) -> void: controls.set_value(key, str(options[idx])))
+			_enum_widgets[key] = {"button": opt, "options": options}
+			Kit.row(page, label_text, opt, KEY_WIDTH)
 		"binding":
-			var bind_vbox := VBoxContainer.new()
-			bind_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-			var btns_hbox := HBoxContainer.new()
-			btns_hbox.add_theme_constant_override("separation", 8)
-
-			var slots: int = s.get("slots", 2)
-			for i in range(1, slots + 1):
+			var v := VBoxContainer.new()
+			var h := HBoxContainer.new()
+			h.add_theme_constant_override("separation", 8)
+			v.add_child(h)
+			for i in range(1, int(s.get("slots", 2)) + 1):
 				var slot_key: String = "bind." + key if i == 1 else "bind%d." % i + key
-				var b_str: String = str(controls.get_value(slot_key, ""))
-
-				var btn := Button.new()
-				btn.text = ControlsScript.binding_to_readable_string(b_str)
-				btn.custom_minimum_size = Vector2(160, 30)
-				btn.pressed.connect(_on_binding_button_pressed.bind(slot_key, btn, key))
+				var btn := Kit.button(_binding_text(slot_key))
+				btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				btn.clip_text = true
+				btn.pressed.connect(_on_binding_button_pressed.bind(slot_key, btn))
 				_binding_buttons[slot_key] = btn
-				btns_hbox.add_child(btn)
+				h.add_child(btn)
+			var conflict := Kit.label("", "DimLabel")
+			conflict.add_theme_color_override("font_color", AMBER)
+			conflict.visible = false
+			v.add_child(conflict)
+			_conflict_labels[key] = conflict
+			Kit.row(page, label_text, v, KEY_WIDTH)
 
-			bind_vbox.add_child(btns_hbox)
+func _binding_text(slot_key: String) -> String:
+	var b: String = ControlsScript.binding_to_readable_string(str(controls.get_value(slot_key, "")))
+	return b.to_upper()
 
-			# Conflict warning label (orange)
-			var conflict_lbl := Label.new()
-			conflict_lbl.add_theme_color_override("font_color", Color(1.0, 0.65, 0.1))
-			conflict_lbl.add_theme_font_size_override("font_size", 13)
-			conflict_lbl.visible = false
-			bind_vbox.add_child(conflict_lbl)
-			_conflict_labels[key] = conflict_lbl
-
-			row_hbox.add_child(bind_vbox)
-			_scroll_vbox.add_child(row_hbox)
-
-func _on_binding_button_pressed(slot_key: String, btn: Button, action_key: String) -> void:
+func _on_binding_button_pressed(slot_key: String, btn: Button) -> void:
 	if not _listening_slot.is_empty():
 		_cancel_listening()
-
-	_listening_slot = {
-		"slot_key": slot_key,
-		"button": btn,
-		"action_key": action_key
-	}
-	btn.text = "Press key / button... (Esc = cancel, Backspace = clear)"
+	_listening_slot = {"slot_key": slot_key, "button": btn}
+	btn.text = "PRESS A KEY / BUTTON  (ESC CANCEL, BACKSPACE CLEAR)"
 
 func _cancel_listening() -> void:
 	if _listening_slot.is_empty():
 		return
-	var slot_key: String = _listening_slot["slot_key"]
-	var btn: Button = _listening_slot["button"]
-	var b_str: String = str(controls.get_value(slot_key, ""))
-	btn.text = ControlsScript.binding_to_readable_string(b_str)
+	_listening_slot["button"].text = _binding_text(_listening_slot["slot_key"])
 	_listening_slot.clear()
 
 func _finish_listening(new_binding: String) -> void:
 	if _listening_slot.is_empty():
 		return
-	var slot_key: String = _listening_slot["slot_key"]
-	controls.set_value(slot_key, new_binding)
+	controls.set_value(_listening_slot["slot_key"], new_binding)
 	_listening_slot.clear()
 	_update_conflict_warnings()
 
 func _input(event: InputEvent) -> void:
 	if _listening_slot.is_empty():
 		return
-
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_ESCAPE:
 			_cancel_listening()
-			get_viewport().set_input_as_handled()
-			return
 		elif event.keycode == KEY_BACKSPACE:
 			_finish_listening("")
-			get_viewport().set_input_as_handled()
-			return
 		else:
-			var b := ControlsScript.event_to_binding_string(event)
-			_finish_listening(b)
-			get_viewport().set_input_as_handled()
-			return
-	elif event is InputEventMouseButton and event.pressed:
-		var b := ControlsScript.event_to_binding_string(event)
-		_finish_listening(b)
+			_finish_listening(ControlsScript.event_to_binding_string(event))
 		get_viewport().set_input_as_handled()
-		return
-	elif event is InputEventJoypadButton and event.pressed:
-		var b := ControlsScript.event_to_binding_string(event)
-		_finish_listening(b)
+	elif (event is InputEventMouseButton or event is InputEventJoypadButton) and event.pressed:
+		_finish_listening(ControlsScript.event_to_binding_string(event))
 		get_viewport().set_input_as_handled()
-		return
 
 func _update_conflict_warnings() -> void:
 	if controls == null:
 		return
-
-	# Map binding_string -> Array of action labels
-	var map: Dictionary = {}
+	var users: Dictionary = {} # binding string -> labels of the actions using it
 	for s in ControlsScript.SETTINGS:
 		if s["type"] != "binding":
 			continue
-		var act: String = s["key"]
-		var slots: int = s.get("slots", 2)
-		for i in range(1, slots + 1):
-			var slot_key: String = "bind." + act if i == 1 else "bind%d." % i + act
-			var b_str: String = str(controls.get_value(slot_key, ""))
-			if b_str != "":
-				if not map.has(b_str):
-					map[b_str] = []
-				var lbl_text: String = s.get("label", act)
-				if not map[b_str].has(lbl_text):
-					map[b_str].append(lbl_text)
-
-	# Now update conflict label for every binding
+		for i in range(1, int(s.get("slots", 2)) + 1):
+			var slot_key: String = "bind." + s["key"] if i == 1 else "bind%d." % i + s["key"]
+			var b: String = str(controls.get_value(slot_key, ""))
+			if b == "":
+				continue
+			var lbl: String = str(s.get("label", s["key"])).to_upper()
+			if not users.has(b):
+				users[b] = []
+			if not users[b].has(lbl):
+				users[b].append(lbl)
 	for s in ControlsScript.SETTINGS:
-		if s["type"] != "binding":
+		if s["type"] != "binding" or not _conflict_labels.has(s["key"]):
 			continue
-		var act: String = s["key"]
-		if not _conflict_labels.has(act):
-			continue
-		var conflict_lbl: Label = _conflict_labels[act]
-		var my_lbl: String = s.get("label", act)
-		var conflicts: Array = []
-
-		var slots: int = s.get("slots", 2)
-		for i in range(1, slots + 1):
-			var slot_key: String = "bind." + act if i == 1 else "bind%d." % i + act
-			var b_str: String = str(controls.get_value(slot_key, ""))
-			if b_str != "" and map.has(b_str):
-				for other_lbl in map[b_str]:
-					if other_lbl != my_lbl and not conflicts.has(other_lbl):
-						conflicts.append(other_lbl)
-
-		if conflicts.size() > 0:
-			conflict_lbl.text = "Also used by: " + ", ".join(conflicts)
-			conflict_lbl.visible = true
-		else:
-			conflict_lbl.visible = false
+		var mine: String = str(s.get("label", s["key"])).to_upper()
+		var others: Array = []
+		for i in range(1, int(s.get("slots", 2)) + 1):
+			var slot_key: String = "bind." + s["key"] if i == 1 else "bind%d." % i + s["key"]
+			var b: String = str(controls.get_value(slot_key, ""))
+			for o in users.get(b, []) if b != "" else []:
+				if o != mine and not others.has(o):
+					others.append(o)
+		var lbl: Label = _conflict_labels[s["key"]]
+		lbl.visible = not others.is_empty()
+		lbl.text = "ALSO USED BY: " + ", ".join(others)
 
 func _on_controls_changed(changed_key: String) -> void:
-	if changed_key.is_empty():
-		# Full reset: refresh all widgets
+	if changed_key.is_empty(): # reset to defaults: refresh every widget
 		for key in _float_widgets:
-			var w = _float_widgets[key]
 			var val: float = float(controls.get_value(key, 0.0))
-			w["slider"].value = val
-			w["label"].text = "%.2f" % val
+			_float_widgets[key]["slider"].set_value_no_signal(val)
+			_float_widgets[key]["label"].text = "%.2f" % val
 		for key in _bool_widgets:
-			_bool_widgets[key].button_pressed = bool(controls.get_value(key, false))
+			_bool_widgets[key].set_pressed_no_signal(bool(controls.get_value(key, false)))
 		for key in _enum_widgets:
-			var opt: OptionButton = _enum_widgets[key]
-			var val_str: String = str(controls.get_value(key, ""))
-			for i in range(opt.item_count):
-				if opt.get_item_text(i) == val_str:
-					opt.selected = i
-					break
+			var w: Dictionary = _enum_widgets[key]
+			w["button"].select(maxi(w["options"].find(str(controls.get_value(key, ""))), 0))
 		for slot_key in _binding_buttons:
-			var btn: Button = _binding_buttons[slot_key]
-			var b_str: String = str(controls.get_value(slot_key, ""))
-			btn.text = ControlsScript.binding_to_readable_string(b_str)
-	else:
-		if _binding_buttons.has(changed_key):
-			var btn: Button = _binding_buttons[changed_key]
-			var b_str: String = str(controls.get_value(changed_key, ""))
-			btn.text = ControlsScript.binding_to_readable_string(b_str)
-
+			_binding_buttons[slot_key].text = _binding_text(slot_key)
+	elif _binding_buttons.has(changed_key):
+		_binding_buttons[changed_key].text = _binding_text(changed_key)
 	_update_conflict_warnings()
 
 func _on_reset_pressed() -> void:

@@ -5,7 +5,8 @@
 //   - wingtip lines: one thin white line per wingtip while YS reports vapour (high G), longer-lived above
 //     CONTRAIL_ALT_M (YSFlight draws its vapour the same way: thin white lines from the wingtips)
 //   - missile / rocket / flare smoke
-//   - damage smoke (damaged, still flying). Shot-down jets' fire + smoke are puffs (fx/death_fx.gd).
+//   - damage smoke (damaged, still flying)
+//   - shot-down plume: fire turning into thick charcoal smoke (colour ramp by age in the shader)
 // Points are recorded from raw sim positions after every physics tick; each frame the newest point is the
 // emitter's interpolated position, so a trail stays attached to the drawn model. When a source stops (vapour
 // ends, missile hits, wreck hits the ground) its trail is left behind and fades out point by point.
@@ -41,9 +42,10 @@ public:
 
     int segment_count() const { return visible_segments; }
     int trail_count() const { return (int)trails.size() - (int)free_list.size(); }
+    int death_trail_count() const; // shot-down plumes still drawn (tests)
 
 private:
-    enum Style : uint8_t { STYLE_WINGTIP, STYLE_MISSILE, STYLE_FLARE, STYLE_DAMAGE };
+    enum Style : uint8_t { STYLE_WINGTIP, STYLE_MISSILE, STYLE_FLARE, STYLE_DAMAGE, STYLE_DEATH };
     enum Owner : uint8_t { OWNER_AIRPLANE, OWNER_WEAPON };
 
     struct Point {
@@ -75,9 +77,11 @@ private:
 
     struct StyleDef {
         float interval;   // seconds between recorded points (medium quality)
-        float fade_pow;   // alpha = alpha0 * (1 - age/life)^fade_pow
+        float fade_pow;   // alpha = alpha0 * (1 - fade)^fade_pow, fade = 0..1 from fade_from to the end of life
+        float fade_from;  // age/life where fading starts
         float min_px;     // minimum on-screen width; negative = widen without fading (thin lines)
         int pass;         // draw order: 0 smoke, 2 lines
+        bool ramp;        // colour from age (shader ramp) instead of the trail's colour
     };
     static const StyleDef STYLES[];
 

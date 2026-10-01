@@ -418,6 +418,7 @@ PackedInt32Array YSFlightSimulation::get_effects_stats() const {
     out.push_back(trails.trail_count());
     out.push_back(weapon_fx.tracer_count());
     out.push_back(weapon_fx.glow_count());
+    out.push_back(trails.death_trail_count());
     return out;
 }
 

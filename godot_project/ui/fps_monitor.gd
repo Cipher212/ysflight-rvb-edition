@@ -24,6 +24,7 @@ func _init() -> void:
 	add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.8))
 	add_theme_constant_override("outline_size", 3)
 	add_theme_font_size_override("font_size", 14)
+	add_theme_font_override("font", preload("res://ui/ui_kit.gd").THEME.default_font) # RvB body font
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)

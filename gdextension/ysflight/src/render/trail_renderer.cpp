@@ -32,6 +32,10 @@ constexpr Emission MISSILE = {0.1f, 5.0f, 1.0f, 6.0f, 0.75f};           // YS: a
 constexpr Emission ROCKET = {0.1f, 2.5f, 0.8f, 4.0f, 0.7f};
 constexpr Emission FLARE = {0.1f, 2.5f, 0.8f, 4.0f, 0.6f};
 constexpr Emission DAMAGE = {0.12f, 4.0f, 2.0f, 10.0f, 0.8f};          // life + 3 s * damage
+// Shot down (spinning down): one continuous plume from the smoke point, fire -> charcoal -> grey (the colour ramp
+// is in trail_ribbon.gdshader). A point every 1/30 s keeps the ribbon smooth however fast the wreck falls.
+constexpr Emission DEATH = {1.0f / 30.0f, 7.0f, 4.5f, 20.0f, 0.92f};
+constexpr float DEATH_FADE_FROM = 0.85f; // stays opaque, then fades over the last 15 % of its life
 const Color WHITE_LINE(1.0f, 1.0f, 1.0f);
 const Color MISSILE_SMOKE(0.93f, 0.93f, 0.93f);
 const Color FLARE_SMOKE(1.0f, 0.97f, 0.9f);
@@ -43,7 +47,7 @@ constexpr float MAX_DRAW_DIST_M = 40000.0f;
 constexpr int FLOATS_PER_SEGMENT = 20; // transform 12 + colour 4 + custom 4
 constexpr int MIN_CAPACITY = 1024;
 
-enum SourceKind : uint64_t { SRC_TIP_R = 1, SRC_TIP_L, SRC_DAMAGE, SRC_WEAPON = 16 };
+enum SourceKind : uint64_t { SRC_TIP_R = 1, SRC_TIP_L, SRC_DAMAGE, SRC_DEATH, SRC_WEAPON = 16 };
 
 uint64_t source_key(SourceKind kind, unsigned int id) {
     return ((uint64_t)kind << 32) | (uint64_t)id;
@@ -60,12 +64,13 @@ struct DrawPoint {
 
 } // namespace
 
-// interval (s), fade_pow, min_px, pass
+// interval (s), fade_pow, fade_from, min_px, pass, colour ramp
 const TrailRenderer::StyleDef TrailRenderer::STYLES[] = {
-    {VAPOR.interval, 2.0f, -1.05f, 2},     // STYLE_WINGTIP (quadratic fade like YS vapour)
-    {MISSILE.interval, 1.3f, 1.5f, 0},     // STYLE_MISSILE
-    {FLARE.interval, 1.5f, 1.5f, 0},       // STYLE_FLARE
-    {DAMAGE.interval, 1.5f, 2.0f, 0},      // STYLE_DAMAGE
+    {VAPOR.interval, 2.0f, 0.0f, -1.05f, 2, false},             // STYLE_WINGTIP (quadratic fade like YS vapour)
+    {MISSILE.interval, 1.3f, 0.0f, 1.5f, 0, false},             // STYLE_MISSILE
+    {FLARE.interval, 1.5f, 0.0f, 1.5f, 0, false},               // STYLE_FLARE
+    {DAMAGE.interval, 1.5f, 0.0f, 2.0f, 0, false},              // STYLE_DAMAGE
+    {DEATH.interval, 1.0f, DEATH_FADE_FROM, 2.0f, 0, true},     // STYLE_DEATH
 };
 
 void TrailRenderer::set_quality(int quality) {
@@ -208,14 +213,18 @@ void TrailRenderer::record_airplanes(FsSimulation *sim, double now) {
         }
         const Vector3 smoke_world = raw.xform(smoke_local);
 
+        if (dying) {
+            const PointParams pp{DEATH.life, DEATH.w0, DEATH.w1, DEATH.alpha};
+            emit(source_key(SRC_DEATH, key), STYLE_DEATH, OWNER_AIRPLANE, key, smoke_local, Color(), pp, smoke_world, now);
+            continue;
+        }
         const float damage = damage_fraction(air);
-        if (!dying && damage >= DAMAGE_SMOKE_FROM) {
+        if (damage >= DAMAGE_SMOKE_FROM) {
             const float d = (damage - DAMAGE_SMOKE_FROM) / (1.0f - DAMAGE_SMOKE_FROM);
             const float shade = 0.30f + (0.08f - 0.30f) * d; // dark grey -> near black with damage
             const PointParams pp{DAMAGE.life + 3.0f * damage, DAMAGE.w0, DAMAGE.w1, DAMAGE.alpha};
             emit(source_key(SRC_DAMAGE, key), STYLE_DAMAGE, OWNER_AIRPLANE, key, smoke_local, Color(shade, shade, shade), pp, smoke_world, now);
         }
-        // Shot down (spinning): fire + smoke are puffs in fx/death_fx.gd (PS2-style), not ribbons.
     }
 }
 
@@ -313,6 +322,14 @@ bool TrailRenderer::emitter_position(FsSimulation *sim, const MotionInterp &inte
     return true;
 }
 
+int TrailRenderer::death_trail_count() const {
+    int n = 0;
+    for (const Trail &t : trails) {
+        n += (t.used && t.style == STYLE_DEATH) ? 1 : 0;
+    }
+    return n;
+}
+
 void TrailRenderer::ensure_capacity(int segments) {
     if (segments <= capacity) {
         return;
@@ -389,19 +406,20 @@ void TrailRenderer::draw(FsSimulation *sim, const MotionInterp &interp, double r
                 const float len = d.length();
                 return len > 1e-4f ? d / len : Vector3(0.0f, 0.0f, 1.0f);
             };
-            auto width_alpha = [&](const DrawPoint &p, float &w, float &a) {
-                const float f = std::min(p.age / std::max(p.life, 0.001f), 1.0f);
+            auto width_alpha = [&](const DrawPoint &p, float &w, float &a, float &f) {
+                f = std::min(p.age / std::max(p.life, 0.001f), 1.0f);
                 const float spread = 1.0f - (1.0f - f) * (1.0f - f);
                 w = p.w0 + (p.w1 - p.w0) * spread;
-                a = p.alpha * std::pow(1.0f - f, sd.fade_pow);
+                const float fade = std::max(f - sd.fade_from, 0.0f) / (1.0f - sd.fade_from);
+                a = p.alpha * std::pow(1.0f - fade, sd.fade_pow);
             };
             Vector3 t0 = tangent_at(0);
-            float w0, a0;
-            width_alpha(pts[0], w0, a0);
+            float w0, a0, f0;
+            width_alpha(pts[0], w0, a0, f0);
             for (int i = 0; i < n - 1; ++i) {
                 const Vector3 t1 = tangent_at(i + 1);
-                float w1, a1;
-                width_alpha(pts[i + 1], w1, a1);
+                float w1, a1, f1;
+                width_alpha(pts[i + 1], w1, a1, f1);
                 if (a0 > 0.003f || a1 > 0.003f) {
                     const Vector3 &p0 = pts[i].pos;
                     const Vector3 &p1 = pts[i + 1].pos;
@@ -411,13 +429,19 @@ void TrailRenderer::draw(FsSimulation *sim, const MotionInterp &interp, double r
                     b[1] = p1.x; b[5] = p1.y; b[9] = p1.z;
                     b[2] = t0.x; b[6] = t0.y; b[10] = t0.z;
                     b[3] = t1.x; b[7] = t1.y; b[11] = t1.z;
-                    b[12] = t.color.r; b[13] = t.color.g; b[14] = t.color.b; b[15] = sd.min_px;
+                    if (sd.ramp) { // colour from the age along the plume (shader); r < 0 marks it
+                        b[12] = -1.0f; b[13] = f0; b[14] = f1;
+                    } else {
+                        b[12] = t.color.r; b[13] = t.color.g; b[14] = t.color.b;
+                    }
+                    b[15] = sd.min_px;
                     b[16] = w0; b[17] = w1; b[18] = a0; b[19] = a1;
                     ++written;
                 }
                 t0 = t1;
                 w0 = w1;
                 a0 = a1;
+                f0 = f1;
             }
         }
     }

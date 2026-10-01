@@ -224,8 +224,9 @@ func _test_shoot_down_and_respawn() -> void:
 	await _seconds(2.0)
 	await _shot("07_death_smoke_far")
 	var dfx: Node = main._death_fx
-	_check("death fire + smoke puffs", dfx.fire_spawned > 0 and dfx.smoke_spawned > 0,
-		"%d fire quads, %d smoke puffs so far" % [dfx.fire_spawned, dfx.smoke_spawned])
+	var plumes: int = sim.get_effects_stats()[4]
+	_check("death fireball + smoke plume + shards", dfx.fires_started > 0 and plumes > 0 and dfx.shards_spawned > 0,
+		"%d fireballs, %d plumes, %d shards so far" % [dfx.fires_started, plumes, dfx.shards_spawned])
 	main.camera_rig.cam_distance = 18.0
 	var respawned: bool = main.get_node("RespawnManager").respawn()
 	await _seconds(1.0)

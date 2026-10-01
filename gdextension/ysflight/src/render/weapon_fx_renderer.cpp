@@ -26,7 +26,6 @@ constexpr int MAX_GLOWS = 128;
 constexpr int FLOATS_PER_INSTANCE = 16; // transform 12 + colour 4
 
 const Color GUN_TRACER(1.0f, 0.78f, 0.22f, 0.96f);  // warm 20 mm tracer
-const Color DEBRIS_TRACER(1.0f, 0.48f, 0.14f, 0.90f);
 const Color MISSILE_GLOW(1.0f, 0.72f, 0.28f, 0.95f);
 const Color FLARE_GLOW(2.6f, 2.2f, 1.5f, 1.0f); // over 1.0 on purpose: the core burns out to white
 constexpr float FLARE_SIZE_M = 7.0f;             // + up to 30% flicker
@@ -147,7 +146,10 @@ void WeaponFxRenderer::draw(FsSimulation *sim, const MotionInterp &interp, uint6
             continue;
         }
         const FSWEAPONTYPE type = w->type;
-        if (type == FSWEAPON_GUN || type == FSWEAPON_DEBRIS) {
+        if (type == FSWEAPON_DEBRIS) {
+            continue; // YS's falling debris: not drawn (shot-down jets throw flat shards, fx/death_fx.gd)
+        }
+        if (type == FSWEAPON_GUN) {
             if (nt >= MAX_TRACERS) {
                 continue;
             }
@@ -160,12 +162,9 @@ void WeaponFxRenderer::draw(FsSimulation *sim, const MotionInterp &interp, uint6
             } else if (ys_to_godot_pos(w->vec).length_squared() > 0.01f) {
                 dir = ys_to_godot_pos(w->vec).normalized();
             }
-            const bool debris = (type == FSWEAPON_DEBRIS);
-            const float len = debris ? std::clamp(std::max(seg_len * 0.85f, 4.5f), 3.0f, 10.0f)
-                                     : std::clamp(std::max(seg_len * 0.95f, 11.0f), 7.0f, 22.0f);
-            const float width = debris ? 1.25f : 1.0f;
-            const Transform3D t(basis_from_forward(dir, Vector3(width, width, len)), pos - dir * (len * 0.45f));
-            write_instance(tb + nt * FLOATS_PER_INSTANCE, t, debris ? DEBRIS_TRACER : GUN_TRACER);
+            const float len = std::clamp(std::max(seg_len * 0.95f, 11.0f), 7.0f, 22.0f);
+            const Transform3D t(basis_from_forward(dir, Vector3(1.0f, 1.0f, len)), pos - dir * (len * 0.45f));
+            write_instance(tb + nt * FLOATS_PER_INSTANCE, t, GUN_TRACER);
             ++nt;
             continue;
         }

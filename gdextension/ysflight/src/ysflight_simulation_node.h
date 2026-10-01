@@ -87,7 +87,7 @@ public:
     Dictionary get_aircraft_fx_state();
     void set_effects_quality(int64_t quality); // 0 low, 1 medium, 2 high (trails)
     void set_aircraft_shadows_enabled(bool enabled); // Graphics setting (render/aircraft_shadows.h)
-    PackedInt32Array get_effects_stats() const; // [trail segments, trails, tracers, glows]
+    PackedInt32Array get_effects_stats() const; // [trail segments, trails, tracers, glows, shot-down plumes]
 
     // Controls
     void set_cockpit_cull_mode(bool enabled);

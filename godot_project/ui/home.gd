@@ -1,12 +1,14 @@
 extends Control
 
-# Home screen (main scene): Local (offline event builder), Online (not yet), Settings, Quit. Command-line modes
+# Home screen (main scene): Local (offline event builder), Free Flight (alone on the map), Online (placeholder
+# screen), Settings, Quit. Command-line modes
 # (tests, benchmark, spectator, AI soak, --mission) skip the menus and start the game directly.
 
 const Kit := preload("res://ui/ui_kit.gd")
 const AppState := preload("res://core/app_state.gd")
 const GAME_SCENE := "res://main.tscn"
 const BUILDER_SCENE := "res://ui/event_builder.tscn"
+const ONLINE_SCENE := "res://ui/online.tscn"
 const DIRECT_FLAGS := ["--run-tests", "--benchmark", "--ai-player", "--ai-soak", "--mission"]
 
 var _controls: Node = null
@@ -53,9 +55,14 @@ func _ready() -> void:
 	body.custom_minimum_size = Vector2(420, 0)
 	body.add_child(Kit.button("LOCAL", "RedButton", func() -> void:
 		get_tree().change_scene_to_file(BUILDER_SCENE)))
-	var online := Kit.button("ONLINE")
-	online.disabled = true
-	online.tooltip_text = "Coming soon"
-	body.add_child(online)
+	body.add_child(Kit.button("FREE FLIGHT", "", _free_flight))
+	body.add_child(Kit.button("ONLINE", "", func() -> void: get_tree().change_scene_to_file(ONLINE_SCENE)))
 	body.add_child(Kit.button("SETTINGS", "BlueButton", func() -> void: _controls.toggle_settings(false)))
 	body.add_child(Kit.button("QUIT", "", func() -> void: get_tree().quit()))
+
+func _free_flight() -> void:
+	AppState.mode = "free_flight"
+	Kit.show_loading(get_tree(), "FREE FLIGHT", "LUAVI  /  NO OTHER AIRCRAFT")
+	await get_tree().process_frame # let the loading screen draw before the map load blocks
+	await get_tree().process_frame
+	get_tree().change_scene_to_file(GAME_SCENE)

@@ -4,7 +4,7 @@ extends SceneTree
 # Run: engine\Godot_v4.7.2-stable_win64_console.exe --headless --path godot_project -s res://tests/ui_smoke.gd
 # Prints "UI SMOKE OK" and exits 0, or "UI SMOKE FAIL: ..." and exits 1. Screens: logs/UI_scheme.md.
 
-const SCENES := ["res://ui/home.tscn", "res://ui/event_builder.tscn", "res://ui/debrief.tscn"]
+const SCENES := ["res://ui/home.tscn", "res://ui/event_builder.tscn", "res://ui/debrief.tscn", "res://ui/online.tscn"]
 const FRAMES_PER_SCENE := 10
 
 var _i := -1

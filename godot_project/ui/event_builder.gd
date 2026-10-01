@@ -133,4 +133,9 @@ func _refresh_rosters() -> void:
 func _fly() -> void:
 	EventConfig.save(cfg)
 	AppState.mode = "event"
+	var map_label: String = str(cfg["map"]).replace("[RVB]", "")
+	Kit.show_loading(get_tree(), "OFFLINE EVENT", "%s  /  BLUE %d  VS  RED %d  /  %d MIN" % [map_label,
+		EventConfig.count(cfg, "blue"), EventConfig.count(cfg, "red"), int(cfg["duration_min"])])
+	await get_tree().process_frame # let the loading screen draw before the map load blocks
+	await get_tree().process_frame
 	get_tree().change_scene_to_file(GAME_SCENE)

@@ -18,7 +18,7 @@ func setup(session: Node) -> void:
 	layer = 20
 	var root := Control.new()
 	root.theme = Kit.THEME
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	Kit.fit_to_window(root)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 

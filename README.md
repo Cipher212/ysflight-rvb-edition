@@ -1,34 +1,29 @@
-# YSFlight RvB Edition - v0.3.0-pre-alpha
+# YSFlight RvB Edition - v0.4.0-pre-alpha
 
 YSFlight's flight simulation (YSFlight Community Edition) running inside the Godot 4 engine, built for
 the RvB (Red vs Blue) community events. **This is a pre-alpha test build**: expect bugs and missing
 features. Right now you can set up and fly an offline RvB event against the AI on the Luavi map
 (up to 18 vs 18).
 
-**New in v0.3.0:**
-- **Smarter AI:** enemies and wingmen now fly by role (fighters, attackers, bombers, close air support,
-  stealth jets, gun fighters and drones). They dodge missiles with flares and hard turns, help nearby
-  teammates, and are slower to notice you sneaking up from behind. Shot-down AI jets return after 5
-  seconds.
-- **Afterburners:** bright flames with shock diamonds, plus heat shimmer behind them.
-- **New look:** the sun and distant hills in the sky, sea all the way to the horizon, a grittier Ace
-  Combat-style colour grade, drifting cloud shadows, sparkling water, shading on aircraft and buildings,
-  YSFlight-style aircraft shadows and sun and explosion glare.
-- **Spectator cameras** (F5 / F6) stay locked on the aircraft you picked.
-- **New Graphics options** to switch each of the new effects off on slower PCs.
-- **Main menu and offline events** (in the RvB website's style): pick your team and callsign, the event
-  length (5 minutes to 2 hours), rules (mid-air collisions, friendly fire) and up to 18 AI pilots per
-  side. Quick buttons fill a side with random aircraft of a chosen role or copy one side to the other.
-  AI pilots keep their names across respawns so their scores add up.
-- **Spawn menu during the event:** choose your aircraft, start position and loadout (Default,
-  Air-to-Air, Strike, Guns Only). The clock and the AI keep running while you choose.
-- **RvB leave rule:** press **Esc twice** to leave your jet. It is free when you have landed and stopped;
-  in the air or while rolling it counts as a death.
-- **Debrief** when the time runs out: winner, kills and losses per team, every pilot's air and ground
-  kills, deaths and missile hit rate, and a kill log. **Export CSV** saves it to the `results` folder.
+**New in v0.4.0:**
+- **Free Flight** (main menu): just you on the map, no enemies (the map's SAM sites and ships hold fire). Pick
+  any aircraft and start; **Esc** pauses and opens the menu.
+- **Every menu in the RvB style:** a new Settings window with tabs, a loading screen, an Online page
+  (placeholder), and all menus scale to any window size.
+- **Shot-down jets** burn with a fireball over the airframe and leave one continuous plume of fire turning
+  into thick black smoke; flat debris shards tumble off at the kill (the old "string of pearls" smoke and
+  spark streaks are gone).
+- **Ground Detail:** fine flecks on grass and fields give a sense of speed and height when flying low
+  (Settings > Graphics > Ground Detail).
+- **Water sparkle** now covers the sea around you with no hard edge or streaks at a distance.
+- **All Camera Views** option (Settings > Display): F3-F8 cameras in normal play. Off by default, as RvB is
+  flown with F1 / F2.
+- Speed lines removed.
 
-(v0.2.0 brought more FPS, YSFlight-style wingtip lines, missile smoke trails, fire and smoke when a jet is
-shot down, and the FPS readout.)
+**v0.3.0 brought:** offline RvB events (event builder, up to 18 vs 18 AI with role-based tactics, spawn menu,
+the RvB leave rule, debrief with CSV export), afterburner flames and the new look (sky, sea, colour grade,
+cloud shadows, aircraft shadows, glare). v0.2.0 brought more FPS, wingtip lines, missile smoke trails and
+the FPS readout.
 
 ---
 
@@ -78,6 +73,8 @@ To **quit**, close the game window (or press Alt+F4).
 - **Shoot:** **Left mouse** = gun, **Right mouse** (or **Space**) = missile. **2** switches weapons,
   **4** drops flares to fool enemy missiles.
 - **Views:** **F1** = cockpit (with the HUD), **F2** = outside view. Hold **U H K M J N** to look around.
+  RvB is flown with these two; for the other cameras (**F3-F8**, **[ ]** picks the aircraft in F6), turn on
+  **Settings > Display > All Camera Views**.
 - **Shot down?** The spawn menu opens after 3 seconds; pick a jet and fly again.
 - **Leave your jet:** press **Esc** twice (costs a death unless you have landed and stopped).
 - **Settings** (controls, sensitivity, graphics): **SETTINGS** on the main menu or in the spawn menu.
@@ -138,7 +135,7 @@ Just delete the game folder. Nothing else was installed. (Your settings file is 
 | Direct weapon select | 5 gun, 6 short-range, 7 medium-range, 8 air-to-ground, 0 bombs / rockets |
 | HUD colour | 9 |
 | Gear / flaps / brake / spoiler | G / F and R / B / D |
-| Views | F1 cockpit, F2 outside |
+| Views | F1 cockpit, F2 outside (F3-F8 with Settings > Display > All Camera Views) |
 | Look around | U H K M J N |
 | Radar range | 3 |
 | Recentre mouse stick | O |

@@ -32,3 +32,7 @@ water_shine_on={
 "type": "float",
 "value": 1.0
 }
+ground_detail_on={
+"type": "float",
+"value": 1.0
+}

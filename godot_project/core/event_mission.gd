@@ -17,6 +17,8 @@ static func write(cfg: Dictionary) -> String:
 		"ALLOWBOM TRUE",
 		"ALLOWRKT TRUE",
 	])
+	if not bool(cfg.get("ground_fire", true)):
+		lines.append("DSABLGND") # YS: the map's ground units (SAM, AAA, ships) never fire (free flight)
 	var f := FileAccess.open(MISSION_PATH, FileAccess.WRITE)
 	if f == null:
 		return ""

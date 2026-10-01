@@ -19,6 +19,7 @@ const ESC_WINDOW_S := 2.0
 const DEATH_MENU_DELAY_S := 3.0
 const DEBRIEF_SCENE := "res://ui/debrief.tscn"
 const LOADOUTS := ["DEFAULT", "AIR-TO-AIR", "STRIKE", "GUNS ONLY"] # sim/flight_setup.h presets
+const END_LABEL := "END EVENT"
 
 var main: Node = null
 var sim: YSFlightSimulation = null
@@ -45,6 +46,22 @@ func setup(p_main: Node, p_config: Dictionary) -> void:
 
 func player_team() -> String:
 	return str(config.get("player_team", "blue"))
+
+# Spawn menu (ui/spawn_menu.gd; core/free_flight_session.gd offers the same calls)
+func aircraft() -> Array:
+	return EventConfig.aircraft_for(catalog, player_team())
+
+func menu_title() -> String:
+	return "SPAWN  /  " + player_team().to_upper() + " FORCE"
+
+func menu_team() -> String:
+	return player_team()
+
+func menu_note() -> String:
+	return "THE EVENT KEEPS RUNNING WHILE YOU CHOOSE"
+
+func end_session() -> void:
+	end_event()
 
 # Start positions for the spawn menu: the map's air spots for the team first, then its airfield spots.
 func start_positions() -> PackedStringArray:

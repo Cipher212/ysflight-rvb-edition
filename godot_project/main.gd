@@ -32,6 +32,8 @@ const AppState = preload("res://core/app_state.gd")
 const EventConfig = preload("res://core/event_config.gd")
 const EventMission = preload("res://core/event_mission.gd")
 const EventSessionScript = preload("res://core/event_session.gd")
+const FreeFlightSessionScript = preload("res://core/free_flight_session.gd")
+const Kit = preload("res://ui/ui_kit.gd")
 const EventOverlayScript = preload("res://ui/event_overlay.gd")
 const SpawnMenuScript = preload("res://ui/spawn_menu.gd")
 const SunGlareScript = preload("res://fx/sun_glare.gd")
@@ -58,6 +60,7 @@ var benchmark_mode := false
 var ai_player_mode := false # --ai-player: the YS dogfight AI flies the player jet (spectating)
 var test_mode := false      # --run-tests: tests/test_runner.gd plays through the mission and quits
 var event_mode := false     # offline RvB event (core/app_state.gd, set by the menus)
+var free_flight_mode := false # Home > FREE FLIGHT: the map with no other aircraft
 var event_session: Node = null
 
 var _puffs: Node3D = null
@@ -79,6 +82,7 @@ func _ready() -> void:
 	var soak_i := args.find("--ai-soak")
 	ai_player_mode = benchmark_mode or soak_i >= 0 or "--ai-player" in args
 	event_mode = AppState.mode == "event" and not (benchmark_mode or test_mode or ai_player_mode)
+	free_flight_mode = AppState.mode == "free_flight" and not (benchmark_mode or test_mode or ai_player_mode)
 
 	_add_sun()
 	ysflight_sim = YSFlightSimulation.new()
@@ -97,6 +101,10 @@ func _ready() -> void:
 	if event_mode:
 		event_config = EventConfig.load_config()
 		mission = EventMission.write(event_config) # map + rules only; the event spawns the aircraft
+	elif free_flight_mode:
+		var solo: Dictionary = EventConfig.load_config()
+		solo["ground_fire"] = false # no enemies: the map's SAM sites and ships hold fire
+		mission = EventMission.write(solo)
 	ysflight_sim.load_yfs(mission)
 	if "--no-interp" in args:
 		ysflight_sim.set_interpolation_enabled(false) # A/B test: show the latest physics tick, no blending
@@ -134,7 +142,6 @@ func _ready() -> void:
 	_crashes.setup(_puffs)
 	_death_fx = DeathFXScript.new()
 	add_child(_death_fx)
-	_death_fx.setup(_puffs)
 	sun_glare = SunGlareScript.new()
 	sun_glare.setup(camera, _sun)
 
@@ -202,6 +209,13 @@ func _ready() -> void:
 		var spawn_menu: CanvasLayer = SpawnMenuScript.new()
 		add_child(spawn_menu)
 		spawn_menu.setup(event_session)
+	elif free_flight_mode:
+		var free_session: Node = FreeFlightSessionScript.new()
+		add_child(free_session)
+		free_session.setup(self)
+		var free_menu: CanvasLayer = SpawnMenuScript.new()
+		add_child(free_menu)
+		free_menu.setup(free_session)
 	elif benchmark_mode:
 		benchmark = BenchmarkScript.new()
 		benchmark.name = "Benchmark"
@@ -220,6 +234,7 @@ func _ready() -> void:
 		if sample_i >= 0 and sample_i + 1 < args.size():
 			soak.sample_s = float(args[sample_i + 1])
 		soak.setup(self, float(args[soak_i + 1]) if soak_i + 1 < args.size() else 600.0)
+	Kit.hide_loading(get_tree()) # the menus' loading screen (ui/ui_kit.gd) stays up until the map is ready
 
 # Effects quality 0 low / 1 medium / 2 high (graphics_settings.gd, from "FX Density").
 func set_effects_quality(quality: int) -> void:

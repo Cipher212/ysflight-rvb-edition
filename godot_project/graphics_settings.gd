@@ -13,7 +13,7 @@ class_name GraphicsSettings
 #   - draw_distance_km: Camera3D far plane in metres (20..120 km).
 #   - fx_density: effects quality Low/Medium/High -> main.set_effects_quality (trail points, puff pools).
 #   - EFFECT_KEYS: effects for stronger PCs, each on/off (on in the Medium and High presets, off in Low):
-#     aircraft shadows (C++), cloud shadows / water shine (global shader uniforms), heat haze (camera
+#     aircraft shadows (C++), cloud shadows / water shine / ground detail (global shader uniforms), heat haze (camera
 #     cull layer), sun & explosion glare (fx/ nodes).
 #   - graphics_preset: Synchronises Low/Medium/High presets or sets Custom on edit.
 #
@@ -23,7 +23,7 @@ class_name GraphicsSettings
 #   handled solely by the benchmark runner.
 # ==============================================================================
 
-const EFFECT_KEYS := ["aircraft_shadows", "cloud_shadows", "water_shine", "heat_haze", "lens_glare"]
+const EFFECT_KEYS := ["aircraft_shadows", "cloud_shadows", "water_shine", "ground_detail", "heat_haze", "lens_glare"]
 
 var main: Node = null
 var controls: Node = null
@@ -207,6 +207,8 @@ func _apply_effect(key: String, on: bool) -> void:
 			RenderingServer.global_shader_parameter_set("cloud_shadows_on", 1.0 if on else 0.0)
 		"water_shine":
 			RenderingServer.global_shader_parameter_set("water_shine_on", 1.0 if on else 0.0)
+		"ground_detail":
+			RenderingServer.global_shader_parameter_set("ground_detail_on", 1.0 if on else 0.0)
 		"heat_haze":
 			main.camera.set_cull_mask_value(main.HEAT_HAZE_LAYER, on)
 		"lens_glare":
