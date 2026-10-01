@@ -4,7 +4,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifdef _WIN32
 #include <direct.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <godot_cpp/classes/camera3d.hpp>
 #include <godot_cpp/classes/engine.hpp>
@@ -190,7 +194,11 @@ void YSFlightSimulation::load_yfs(String file_path) {
 
     // YS reads its data files relative to the working directory = the Godot project folder
     const String res_path = ProjectSettings::get_singleton()->globalize_path("res://");
+#ifdef _WIN32
     _wchdir((const wchar_t *)res_path.utf16().get_data());
+#else
+    chdir(res_path.utf8().get_data());
+#endif
 
     ysgd::load_rvb_roles("res://rvb_roles.txt");  // Before world->Load: the mission's AIs are wrapped while loading
     ysgd::reset_rvb_ai();
@@ -208,7 +216,11 @@ void YSFlightSimulation::load_yfs(String file_path) {
     const String global_path = ProjectSettings::get_singleton()->globalize_path(file_path);
     UtilityFunctions::print("YSFlight: Loading " + global_path);
     ysgd::set_breadcrumb("load_yfs: world->Load");
+#ifdef _WIN32
     const YSRESULT load_res = world->Load((const wchar_t *)global_path.utf16().get_data());
+#else
+    const YSRESULT load_res = world->Load((const wchar_t *)global_path.utf32().get_data());
+#endif
     ysgd::log_line(load_res == YSOK ? "world->Load() finished with YSOK." : "ERROR: world->Load() returned YSERR!");
     if (load_res != YSOK) {
         UtilityFunctions::print("YSFlight Error: world->Load returned YSERR!");
@@ -439,7 +451,11 @@ Array YSFlightSimulation::get_aircraft_catalog() {
     }
     if (world->GetAirplaneTemplateName(0) == nullptr) {
         const String res_path = ProjectSettings::get_singleton()->globalize_path("res://");
+#ifdef _WIN32
         _wchdir((const wchar_t *)res_path.utf16().get_data()); // YS reads its data relative to the project
+#else
+        chdir(res_path.utf8().get_data()); // YS reads its data relative to the project
+#endif
         ysgd::load_rvb_roles("res://rvb_roles.txt");
         FsUseLocalFolderSetting();
         world->LoadTemplateAll();

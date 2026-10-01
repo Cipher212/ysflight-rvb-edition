@@ -2589,7 +2589,7 @@ YSRESULT FsWorld::LoadGroundTemplate(
 			YsString utf8;
 			utf8.EncodeUTF8 <wchar_t> (prop);
 			fsStderr.Printf("Load Error :%s\n",utf8.Txt());
-			delete neo;
+			groundTemplate.Delete(neo);
 			return YSERR;
 		}
 

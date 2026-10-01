@@ -7,7 +7,11 @@
 using namespace godot;
 
 extern "C" {
+#ifdef _WIN32
     __declspec(dllexport) void* __cdecl DummyReturnZero() { return nullptr; }
+#else
+    void* DummyReturnZero() { return nullptr; }
+#endif
 }
 
 void initialize_ysflight_module(ModuleInitializationLevel p_level) {

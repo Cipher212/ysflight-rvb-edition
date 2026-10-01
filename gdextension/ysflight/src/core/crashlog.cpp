@@ -10,6 +10,8 @@
 #endif
 #include <direct.h>
 #include <windows.h>
+#else
+#include <sys/stat.h>
 #endif
 
 using namespace godot;
@@ -19,7 +21,11 @@ namespace ysgd {
 CrashStats g_crash_stats;
 
 static FILE *g_session_log_fp = nullptr;
+#ifdef _WIN32
 static wchar_t g_crashlog_dir[512] = L"crashlog";
+#else
+static char g_crashlog_dir[512] = "crashlog";
+#endif
 static volatile const char *g_breadcrumb = "uninitialized";
 static bool g_handlers_installed = false;
 
@@ -33,7 +39,11 @@ void log_line(const char *msg) {
     }
     std::time_t now = std::time(nullptr);
     struct tm tbuf;
+#ifdef _WIN32
     localtime_s(&tbuf, &now);
+#else
+    localtime_r(&now, &tbuf);
+#endif
     fprintf(g_session_log_fp, "[%02d:%02d:%02d] [Frame %llu | SimT %.2fs] %s\n",
             tbuf.tm_hour, tbuf.tm_min, tbuf.tm_sec,
             (unsigned long long)g_crash_stats.physics_frame, (double)g_crash_stats.sim_time, msg);
@@ -145,6 +155,7 @@ void crashlog_init(const String &res_global_path) {
     const int cut = slash > bslash ? slash : bslash;
     const String dir = (cut > 0) ? (base_dir.substr(0, cut) + "/crashlog") : (base_dir + "/crashlog");
 
+#ifdef _WIN32
     const Char16String wdir = dir.utf16();
     wcsncpy_s(g_crashlog_dir, 512, (const wchar_t *)wdir.get_data(), _TRUNCATE);
     _wmkdir(g_crashlog_dir);
@@ -155,6 +166,17 @@ void crashlog_init(const String &res_global_path) {
         g_session_log_fp = _wfopen(latest_path, L"w");
         log_line("=== YSFlight-Godot Session Log Initialized ===");
     }
+#else
+    snprintf(g_crashlog_dir, sizeof(g_crashlog_dir), "%s", dir.utf8().get_data());
+    mkdir(g_crashlog_dir, 0755);
+
+    if (g_session_log_fp == nullptr) {
+        char latest_path[600];
+        snprintf(latest_path, sizeof(latest_path), "%s/latest_run.txt", g_crashlog_dir);
+        g_session_log_fp = fopen(latest_path, "w");
+        log_line("=== YSFlight-Godot Session Log Initialized ===");
+    }
+#endif
     if (!g_handlers_installed) {
 #ifdef _WIN32
         AddVectoredExceptionHandler(0, vectored_exception_handler);
@@ -163,7 +185,11 @@ void crashlog_init(const String &res_global_path) {
         std::signal(SIGSEGV, signal_handler);
         std::signal(SIGABRT, signal_handler);
         g_handlers_installed = true;
+#ifdef _WIN32
         log_line("Installed Windows SEH Vectored + Unhandled Exception + Signal crash handlers.");
+#else
+        log_line("Installed POSIX signal crash handlers.");
+#endif
     }
 }
 
