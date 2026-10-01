@@ -20,3 +20,9 @@ godot_project/.godot/
 __pycache__/
 *.pyc
 *.lnk
+
+ysce/
+godot_project/
+gdextension/godot-cpp
+gdextension/godot-cpp-old
+*.os
