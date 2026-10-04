@@ -14,6 +14,10 @@
 #include "fsdogfightautopilot.h"
 #include "fsrvbtacticalautopilot.h"
 #include "fsrvbteampicture.h"
+#include "fsrvbairfieldplan.h"
+#include "fsrvbhands.h"
+#include "fsrvbarrival.h"
+#include "fsrvbtraffic.h"
 #include "fsairsoundbridge.h"
 #include "ysscenery.h"
 

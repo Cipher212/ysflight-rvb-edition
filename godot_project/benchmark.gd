@@ -17,6 +17,10 @@ var last_periodic_sec: int = -1
 var bench_vsync := false # true = vsync on, as players run it (frame pacing by the display)
 var bench_fps: int = 0 # 0 = uncapped (measures headroom); 60 = what a player with a 60 FPS cap sees
 var bench_res := Vector2i(1920, 1080) # Vector2i.ZERO = "native": leave the window as it is
+var bench_all_cameras := false # Opt-in full camera cycle for model comparisons.
+var bench_chase_camera := false # Fixed normal exterior view for a camera-consistent comparison.
+var chase_aircraft_key: int = -1 # -1 follows the player; otherwise a surviving aircraft.
+var chase_focus_alive := true
 
 func setup(m: Node) -> void:
 	main = m
@@ -28,6 +32,10 @@ func setup(m: Node) -> void:
 			bench_label = arg.trim_prefix("--bench-label=")
 		elif arg == "--bench-vsync":
 			bench_vsync = true
+		elif arg == "--bench-all-cameras":
+			bench_all_cameras = true
+		elif arg == "--bench-chase-camera":
+			bench_chase_camera = true
 		elif arg.begins_with("--bench-fps="):
 			bench_fps = arg.trim_prefix("--bench-fps=").to_int()
 		elif arg.begins_with("--bench-res="):
@@ -55,7 +63,23 @@ func setup(m: Node) -> void:
 	start_tick = Engine.get_physics_frames()
 	main.ysflight_sim.get_frame_stats() # Reset accumulators
 	
-	csv_lines.append("frame,sim_time,wall_ms,ticks,sim_ms,sync_ms,camera_ms,fetch_ms,vfx_ms,hud_ms,gpu_ms,render_cpu_ms,draw_calls,primitives,objects,nodes,alive_air,weapons,explosions,visual_entities,cam_mode,flag,audio_ms,motion_err,fx_cpp_ms")
+	csv_lines.append("frame,sim_time,wall_ms,ticks,sim_ms,sync_ms,camera_ms,fetch_ms,vfx_ms,hud_ms,gpu_ms,render_cpu_ms,draw_calls,primitives,objects,nodes,alive_air,weapons,explosions,visual_entities,cam_mode,flag,audio_ms,motion_err,fx_cpp_ms,chase_aircraft_key,chase_focus_alive")
+
+# Keep the normal chase view on an aircraft after the player dies, without changing the simulation.
+func follow_transform(player_tfm: Transform3D, tel: Dictionary, airplanes: Dictionary) -> Transform3D:
+	if not bench_chase_camera:
+		return player_tfm
+	if bool(tel.get("is_alive", false)):
+		chase_aircraft_key = -1
+		chase_focus_alive = true
+		return player_tfm
+	if not airplanes.has(chase_aircraft_key) or not bool(airplanes[chase_aircraft_key].get("is_alive", false)):
+		chase_aircraft_key = -1
+		for key in airplanes:
+			if bool(airplanes[key].get("is_alive", false)) and (chase_aircraft_key < 0 or int(key) < chase_aircraft_key):
+				chase_aircraft_key = int(key)
+	chase_focus_alive = airplanes.has(chase_aircraft_key)
+	return airplanes[chase_aircraft_key]["transform"] if chase_focus_alive else player_tfm
 
 # Keeps the render resolution fixed for the whole run (maximising the window would change the GPU load).
 func _enforce_window_size() -> void:
@@ -92,7 +116,12 @@ func record_frame(camera_us: float, fetch_us: float, vfx_us: float, hud_us: floa
 	var sim_time: float = (Engine.get_physics_frames() - start_tick) / float(Engine.physics_ticks_per_second)
 	
 	var target_cam: int = 0
-	if sim_time < 20.0:
+	if bench_chase_camera:
+		target_cam = main.camera_rig.CamMode.HORIZON_CHASE
+	elif bench_all_cameras:
+		# CamMode values 1..8 are F1..F8 (camera/camera_rig.gd); equal time per view.
+		target_cam = mini(int(sim_time / maxf(bench_seconds / 8.0, 0.001)), 7) + 1
+	elif sim_time < 20.0:
 		target_cam = main.camera_rig.CamMode.HORIZON_CHASE
 	elif sim_time < 35.0:
 		target_cam = main.camera_rig.CamMode.COCKPIT
@@ -176,6 +205,7 @@ func record_frame(camera_us: float, fetch_us: float, vfx_us: float, hud_us: floa
 	var line := "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%.3f" % [
 		float(frame_count), sim_time, wall_ms, ticks, sim_ms, sync_ms, camera_us/1000.0, fetch_us/1000.0, vfx_us/1000.0, hud_us/1000.0, gpu_ms, render_cpu_ms, draw_calls, primitives, objects, nodes, alive_air, weapons, explosions, visual_entities, float(cam_mode), float(flag), audio_us/1000.0, motion_err, fx_cpp_ms
 	]
+	line += ",%d,%d" % [chase_aircraft_key, 1 if chase_focus_alive else 0]
 	csv_lines.append(line)
 	frame_count += 1
 	
@@ -196,6 +226,7 @@ func _finish_benchmark() -> void:
 		"vsync": bench_vsync,
 		"refresh_hz": DisplayServer.screen_get_refresh_rate(),
 		"bench_seconds": bench_seconds,
+		"camera_schedule": "fixed F2 chase" if bench_chase_camera else ("F1-F8 equal duration" if bench_all_cameras else "standard"),
 		"started": start_datetime,
 		"window_size": "%dx%d" % [DisplayServer.window_get_size().x, DisplayServer.window_get_size().y],
 		"gpu": RenderingServer.get_video_adapter_name(),

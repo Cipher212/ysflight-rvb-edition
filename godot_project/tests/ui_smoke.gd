@@ -4,6 +4,7 @@ extends SceneTree
 # Run: engine\Godot_v4.7.2-stable_win64_console.exe --headless --path godot_project -s res://tests/ui_smoke.gd
 # Prints "UI SMOKE OK" and exits 0, or "UI SMOKE FAIL: ..." and exits 1. Screens: logs/UI_scheme.md.
 
+const Kit := preload("res://ui/ui_kit.gd")
 const SCENES := ["res://ui/home.tscn", "res://ui/event_builder.tscn", "res://ui/debrief.tscn", "res://ui/online.tscn"]
 const FRAMES_PER_SCENE := 10
 
@@ -11,8 +12,16 @@ var _i := -1
 var _frames := 0
 var _node: Node = null
 var _failed := false
+var _lifecycle_tested := false
 
 func _process(_delta: float) -> bool:
+	if not _lifecycle_tested:
+		_lifecycle_tested = true
+		_test_resize_lifecycle()
+		if _failed:
+			print("UI SMOKE FAIL")
+			quit(1)
+			return true
 	if _node != null:
 		_frames += 1
 		if _frames < FRAMES_PER_SCENE:
@@ -39,3 +48,32 @@ func _process(_delta: float) -> bool:
 	_frames = 0
 	print("UI SMOKE: ", path)
 	return false
+
+func _test_resize_lifecycle() -> void:
+	var vp := SubViewport.new()
+	vp.size = Vector2i(1280, 720)
+	root.add_child(vp)
+	var baseline: int = vp.size_changed.get_connections().size()
+
+	var menu := Control.new()
+	vp.add_child(menu)
+	Kit.fit_to_window(menu)
+
+	var initial_scale: Vector2 = menu.scale
+	vp.size = Vector2i(1920, 1080)
+	var updated_scale: Vector2 = menu.scale
+
+	if updated_scale == initial_scale or not updated_scale.is_equal_approx(Vector2.ONE):
+		print("UI SMOKE FAIL: resize did not update scale while alive (from ", initial_scale, " to ", updated_scale, ")")
+		_failed = true
+
+	menu.free()
+
+	var after_free_conns: int = vp.size_changed.get_connections().size()
+	if after_free_conns != baseline:
+		print("UI SMOKE FAIL: size_changed connections did not return to baseline (baseline ", baseline, ", got ", after_free_conns, ")")
+		_failed = true
+
+	vp.size = Vector2i(2560, 1440)
+	vp.free()
+	print("UI SMOKE: resize lifecycle OK")

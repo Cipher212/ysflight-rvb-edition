@@ -3,6 +3,8 @@
 // (-N .. -1), which pushes the vertex away from the camera in view space, earlier layers further, so later
 // layers (runways over grass) win without z-fighting, and 3D objects at y = 0 win over every layer.
 // Vertex colours are sRGB. Define MAP_POINTS before including for point primitives.
+const float MAP_LAYER_DEPTH_STEP = 0.00006; // Separate nearly coplanar layers at grazing angles.
+
 void vertex() {
 	if (!OUTPUT_IS_SRGB) {
 		COLOR.rgb = mix(pow((COLOR.rgb + vec3(0.055)) * (1.0 / (1.0 + 0.055)), vec3(2.4)),
@@ -12,6 +14,6 @@ void vertex() {
 	POINT_SIZE = 4.0;
 #endif
 	vec4 view_pos = MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
-	view_pos.xyz *= (1.0 - UV.x * 0.000015);
+	view_pos.xyz *= (1.0 - UV.x * MAP_LAYER_DEPTH_STEP);
 	POSITION = PROJECTION_MATRIX * view_pos;
 }

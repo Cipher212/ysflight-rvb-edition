@@ -277,6 +277,22 @@ const SETTINGS: Array[Dictionary] = [
 
 	# --- Display ---
 	{
+		"key": "window_mode",
+		"label": "Window Mode",
+		"section": "Display",
+		"type": "enum",
+		"default": "Windowed",
+		"options": ["Windowed", "Borderless Fullscreen", "Fullscreen"]
+	},
+	{
+		"key": "resolution",
+		"label": "Resolution (Windowed)",
+		"section": "Display",
+		"type": "enum",
+		"default": "1920x1080",
+		"options": ["1280x720", "1366x768", "1600x900", "1920x1080", "2560x1440", "3840x2160"]
+	},
+	{
 		"key": "cockpit_head_movement",
 		"label": "Head Moves Under G (Cockpit)",
 		"section": "Display",
@@ -296,6 +312,85 @@ const SETTINGS: Array[Dictionary] = [
 		"section": "Display",
 		"type": "bool",
 		"default": false
+	},
+
+	# --- Audio (audio/audio_volume.gd): 0..1, slider + number field ---
+	{
+		"key": "volume_master",
+		"label": "Master Volume",
+		"section": "Audio",
+		"type": "float",
+		"default": 1.0,
+		"min": 0.0,
+		"max": 1.0,
+		"step": 0.01,
+		"field": true
+	},
+	{
+		"key": "volume_engines",
+		"label": "Engines (all aircraft)",
+		"section": "Audio",
+		"type": "float",
+		"default": 1.0,
+		"min": 0.0,
+		"max": 1.0,
+		"step": 0.01,
+		"field": true
+	},
+	{
+		"key": "volume_effects",
+		"label": "Effects (weapons, explosions)",
+		"section": "Audio",
+		"type": "float",
+		"default": 1.0,
+		"min": 0.0,
+		"max": 1.0,
+		"step": 0.01,
+		"field": true
+	},
+	{
+		"key": "volume_warnings",
+		"label": "Cockpit Warnings",
+		"section": "Audio",
+		"type": "float",
+		"default": 1.0,
+		"min": 0.0,
+		"max": 1.0,
+		"step": 0.01,
+		"field": true
+	},
+	{
+		"key": "volume_music",
+		"label": "Music (not used yet)",
+		"section": "Audio",
+		"type": "float",
+		"default": 1.0,
+		"min": 0.0,
+		"max": 1.0,
+		"step": 0.01,
+		"field": true
+	},
+	{
+		"key": "volume_radio",
+		"label": "Radio / Voice (not used yet)",
+		"section": "Audio",
+		"type": "float",
+		"default": 1.0,
+		"min": 0.0,
+		"max": 1.0,
+		"step": 0.01,
+		"field": true
+	},
+	{
+		"key": "volume_menu",
+		"label": "Menu Sounds (not used yet)",
+		"section": "Audio",
+		"type": "float",
+		"default": 1.0,
+		"min": 0.0,
+		"max": 1.0,
+		"step": 0.01,
+		"field": true
 	},
 
 	# --- Graphics ---
@@ -396,6 +491,13 @@ const SETTINGS: Array[Dictionary] = [
 	{
 		"key": "lens_glare",
 		"label": "Sun & Explosion Glare",
+		"section": "Graphics",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "low_clouds",
+		"label": "Low Cloud Layer",
 		"section": "Graphics",
 		"type": "bool",
 		"default": true

@@ -5,7 +5,8 @@ extends Node3D
 # -100: interpolation + model sync) and its physics tick runs after the controls (priority +100).
 # Command-line flags (after "--"): --benchmark, --ai-player, --no-interp, --mission <res path>,
 # --stock-ai (stock YS AI instead of the RvB tactical AI), --no-ai-respawn, --ai-ground-ops (archived RTB/taxi),
-# --ai-soak <sim seconds> [--sim-speed N] (AI-only run that logs the AI, tests/ai_soak.gd). Notes: logs/.
+# --ai-soak <sim seconds> [--sim-speed N] (AI-only run that logs the AI, tests/ai_soak.gd),
+# --ai-arrival <RUNWAY> --arrival-out <dir> (arrival follower test, tests/ai_arrival_test.gd). Notes: logs/.
 
 const AudioManagerScript = preload("res://audio_manager.gd")
 const HUDScript = preload("res://hud.gd")
@@ -17,6 +18,8 @@ const SettingsPanelScript = preload("res://settings_panel.gd")
 const ControlsOverlayScript = preload("res://controls_overlay.gd")
 const RespawnManagerScript = preload("res://respawn_manager.gd")
 const GraphicsSettingsScript = preload("res://graphics_settings.gd")
+const DisplaySettingsScript = preload("res://display_settings.gd")
+const AudioVolumeScript = preload("res://audio/audio_volume.gd")
 const CameraRigScript = preload("res://camera/camera_rig.gd")
 const PuffSystemScript = preload("res://fx/puff_system.gd")
 const ExplosionFXScript = preload("res://fx/explosion_fx.gd")
@@ -27,7 +30,9 @@ const FpsMonitorScript = preload("res://ui/fps_monitor.gd")
 const PerfLogScript = preload("res://core/perf_log.gd")
 const TestRunnerScript = preload("res://tests/test_runner.gd")
 const AiSoakScript = preload("res://tests/ai_soak.gd")
+const AiArrivalTestScript = preload("res://tests/ai_arrival_test.gd")
 const SkyEnvironmentScript = preload("res://world/sky_environment.gd")
+const DayCycleScript = preload("res://world/day_cycle.gd")
 const AppState = preload("res://core/app_state.gd")
 const EventConfig = preload("res://core/event_config.gd")
 const EventMission = preload("res://core/event_mission.gd")
@@ -38,6 +43,7 @@ const EventOverlayScript = preload("res://ui/event_overlay.gd")
 const SpawnMenuScript = preload("res://ui/spawn_menu.gd")
 const SunGlareScript = preload("res://fx/sun_glare.gd")
 const BlastGlowScript = preload("res://fx/blast_glow.gd")
+const LowCloudLayerScript = preload("res://world/low_cloud_layer.gd")
 
 const MISSION := "res://mission/luavi_16v16.yfs"
 const BENCHMARK_SEED := 12345
@@ -59,9 +65,12 @@ var benchmark: Node = null
 var benchmark_mode := false
 var ai_player_mode := false # --ai-player: the YS dogfight AI flies the player jet (spectating)
 var test_mode := false      # --run-tests: tests/test_runner.gd plays through the mission and quits
+var arrival_test_mode := false # --ai-arrival: tests/ai_arrival_test.gd (no player respawn)
 var event_mode := false     # offline RvB event (core/app_state.gd, set by the menus)
 var free_flight_mode := false # Home > FREE FLIGHT: the map with no other aircraft
 var event_session: Node = null
+var day_cycle: Node = null
+var low_cloud_layer: Node3D = null
 
 var _puffs: Node3D = null
 var _explosions: Node3D = null
@@ -80,7 +89,9 @@ func _ready() -> void:
 	benchmark_mode = "--benchmark" in args
 	test_mode = "--run-tests" in args
 	var soak_i := args.find("--ai-soak")
-	ai_player_mode = benchmark_mode or soak_i >= 0 or "--ai-player" in args
+	var arrival_i := args.find("--ai-arrival")
+	arrival_test_mode = arrival_i >= 0
+	ai_player_mode = benchmark_mode or soak_i >= 0 or arrival_i >= 0 or "--ai-player" in args
 	event_mode = AppState.mode == "event" and not (benchmark_mode or test_mode or ai_player_mode)
 	free_flight_mode = AppState.mode == "free_flight" and not (benchmark_mode or test_mode or ai_player_mode)
 
@@ -108,7 +119,9 @@ func _ready() -> void:
 	ysflight_sim.load_yfs(mission)
 	if "--no-interp" in args:
 		ysflight_sim.set_interpolation_enabled(false) # A/B test: show the latest physics tick, no blending
-	if ai_player_mode:
+	if arrival_i >= 0 and arrival_i + 1 < args.size():
+		ysflight_sim.start_ai_arrival(args[arrival_i + 1]) # every aircraft, the player's too
+	elif ai_player_mode:
 		ysflight_sim.enable_player_autopilot()
 	var speed_i := args.find("--sim-speed")
 	if speed_i >= 0 and speed_i + 1 < args.size():
@@ -139,11 +152,21 @@ func _ready() -> void:
 	_crashes = CrashFXScript.new()
 	_crashes.name = "CrashSites"
 	add_child(_crashes)
-	_crashes.setup(_puffs)
+	_crashes.setup(_puffs, _explosions)
 	_death_fx = DeathFXScript.new()
 	add_child(_death_fx)
 	sun_glare = SunGlareScript.new()
 	sun_glare.setup(camera, _sun)
+	day_cycle = DayCycleScript.new()
+	day_cycle.name = "DayCycle"
+	add_child(day_cycle)
+	var time_mode: String = str(event_config.get("time_of_day", "STATIC")) if event_mode else "STATIC"
+	day_cycle.setup(sky_environment, _sun, sun_glare, time_mode)
+
+	low_cloud_layer = LowCloudLayerScript.new()
+	low_cloud_layer.name = "LowCloudLayer"
+	add_child(low_cloud_layer)
+	low_cloud_layer.setup(sky_environment)
 
 	audio_manager = AudioManagerScript.new()
 	audio_manager.name = "AudioManager"
@@ -180,6 +203,14 @@ func _ready() -> void:
 	graphics_settings.name = "GraphicsSettings"
 	add_child(graphics_settings)
 	graphics_settings.setup(self, controls)
+	if not (benchmark_mode or test_mode or soak_i >= 0 or arrival_i >= 0): # the benchmark keeps its own 1920x1080 window
+		var display_settings: Node = DisplaySettingsScript.new()
+		add_child(display_settings)
+		display_settings.setup(controls)
+	if not benchmark_mode: # the benchmark mutes Master (audio_manager.gd)
+		var audio_volume: Node = AudioVolumeScript.new()
+		add_child(audio_volume)
+		audio_volume.setup(controls)
 
 	var respawn_manager: Node = RespawnManagerScript.new()
 	respawn_manager.name = "RespawnManager"
@@ -203,6 +234,7 @@ func _ready() -> void:
 		event_session = EventSessionScript.new()
 		add_child(event_session)
 		event_session.setup(self, event_config) # its first spawn_menu_requested is deferred: menus get it
+		day_cycle.bind_event_session(event_session)
 		var overlay: CanvasLayer = EventOverlayScript.new()
 		add_child(overlay)
 		overlay.setup(event_session)
@@ -234,6 +266,12 @@ func _ready() -> void:
 		if sample_i >= 0 and sample_i + 1 < args.size():
 			soak.sample_s = float(args[sample_i + 1])
 		soak.setup(self, float(args[soak_i + 1]) if soak_i + 1 < args.size() else 600.0)
+	elif arrival_i >= 0:
+		var arrival: Node = AiArrivalTestScript.new()
+		arrival.name = "AiArrivalTest"
+		add_child(arrival)
+		var out_i := args.find("--arrival-out")
+		arrival.setup(self, args[out_i + 1] if out_i >= 0 and out_i + 1 < args.size() else "user://arrival_test")
 	Kit.hide_loading(get_tree()) # the menus' loading screen (ui/ui_kit.gd) stays up until the map is ready
 
 # Effects quality 0 low / 1 medium / 2 high (graphics_settings.gd, from "FX Density").
@@ -249,7 +287,8 @@ func _process(delta: float) -> void:
 	var player_tfm: Transform3D = ysflight_sim.get_player_transform()
 	var tel: Dictionary = ysflight_sim.get_player_telemetry()
 	var airplanes: Dictionary = ysflight_sim.get_airplane_transforms()
-	camera_rig.update(delta, player_tfm, tel, airplanes)
+	var camera_tfm: Transform3D = benchmark.follow_transform(player_tfm, tel, airplanes) if benchmark != null else player_tfm
+	camera_rig.update(delta, camera_tfm, tel, airplanes)
 	var t1 := Time.get_ticks_usec()
 	var explosions: Array = ysflight_sim.get_active_explosions()
 	var fx_state: Dictionary = ysflight_sim.get_aircraft_fx_state()
@@ -260,6 +299,8 @@ func _process(delta: float) -> void:
 	_death_fx.update(delta, fx_state["aircraft"])
 	sun_glare.update()
 	blast_glow.update(delta)
+	if low_cloud_layer != null:
+		low_cloud_layer.update(delta, camera.global_position, get_tree().paused)
 	if _prewarm_left > 0:
 		_prewarm_left -= 1
 		for fx in [sun_glare, blast_glow]: # each hides itself again on its next update

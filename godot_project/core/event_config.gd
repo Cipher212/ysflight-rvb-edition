@@ -11,7 +11,7 @@ const MIN_MINUTES := 5
 const MAX_MINUTES := 120
 const MAPS := [{"id": "[RVB]LUAVI", "label": "LUAVI"}]
 const DIFFICULTIES := ["STANDARD"]             # placeholder: every AI flies the same for now
-const TIMES_OF_DAY := ["STATIC", "DYNAMIC"]     # placeholder: not applied yet
+const TIMES_OF_DAY := ["STATIC", "DYNAMIC"]     # STATIC: fixed daylight; DYNAMIC: dawn-to-night cycle
 # Placeholder pilot names (callsign-style, short enough for the roster and debrief tables)
 const NAMES := ["BOB", "JIM", "TIM", "SAM", "MAX", "LEO", "RAY", "KAI", "ZED", "NED", "OWEN", "EVAN", "HANK",
 	"IVAN", "JACK", "KURT", "LUKE", "MARK", "NICK", "OTTO", "PAUL", "RICK", "SEAN", "TOBY", "VICK", "WADE",
@@ -97,9 +97,13 @@ static func free_name(cfg: Dictionary, rng: RandomNumberGenerator) -> String:
 # Aircraft of the catalog (YSFlightSimulation.get_aircraft_catalog()) for a team, optionally one role.
 static func aircraft_for(catalog: Array, team: String, role: String = "") -> Array:
 	var out := []
+	var seen := {}
 	for a in catalog:
 		if a["team"] == team and (role == "" or a["role"] == role):
-			out.append(a)
+			var id: String = a.get("identifier", "")
+			if not seen.has(id):
+				seen[id] = true
+				out.append(a)
 	return out
 
 static func role_of(catalog: Array, identifier: String) -> String:

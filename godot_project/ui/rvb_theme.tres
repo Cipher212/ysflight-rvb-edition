@@ -63,6 +63,54 @@ border_width_right = 1
 border_width_bottom = 1
 border_color = Color(1, 1, 1, 1)
 
+[sub_resource type="StyleBoxFlat" id="btn_home_normal"]
+content_margin_left = 20.0
+content_margin_top = 16.0
+content_margin_right = 24.0
+content_margin_bottom = 16.0
+bg_color = Color(0.0196, 0.0314, 0.0667, 0.88)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.863, 0.894, 1, 0.26)
+
+[sub_resource type="StyleBoxFlat" id="btn_home_hover"]
+content_margin_left = 20.0
+content_margin_top = 16.0
+content_margin_right = 24.0
+content_margin_bottom = 16.0
+bg_color = Color(0.851, 0.875, 0.933, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="btn_home_red_hover"]
+content_margin_left = 20.0
+content_margin_top = 16.0
+content_margin_right = 24.0
+content_margin_bottom = 16.0
+bg_color = Color(1, 0.176, 0.176, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="btn_home_blue_hover"]
+content_margin_left = 20.0
+content_margin_top = 16.0
+content_margin_right = 24.0
+content_margin_bottom = 16.0
+bg_color = Color(0.184, 0.384, 1, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 1)
+
 [sub_resource type="StyleBoxFlat" id="focus"]
 draw_center = false
 border_width_left = 2
@@ -240,6 +288,37 @@ BlueButton/colors/font_hover_pressed_color = Color(1, 1, 1, 1)
 BlueButton/styles/hover = SubResource("btn_blue_hover")
 BlueButton/styles/pressed = SubResource("btn_blue_hover")
 BlueButton/styles/hover_pressed = SubResource("btn_blue_hover")
+HomeButton/base_type = &"Button"
+HomeButton/colors/font_color = Color(0.902, 0.918, 0.965, 1)
+HomeButton/colors/font_hover_color = Color(0.0196, 0.0275, 0.051, 1)
+HomeButton/colors/font_focus_color = Color(0.0196, 0.0275, 0.051, 1)
+HomeButton/colors/font_pressed_color = Color(0.0196, 0.0275, 0.051, 1)
+HomeButton/colors/font_hover_pressed_color = Color(0.0196, 0.0275, 0.051, 1)
+HomeButton/colors/font_disabled_color = Color(0.902, 0.918, 0.965, 0.35)
+HomeButton/font_sizes/font_size = 24
+HomeButton/fonts/font = SubResource("body_wide")
+HomeButton/styles/normal = SubResource("btn_home_normal")
+HomeButton/styles/hover = SubResource("btn_home_hover")
+HomeButton/styles/pressed = SubResource("btn_home_hover")
+HomeButton/styles/hover_pressed = SubResource("btn_home_hover")
+HomeButton/styles/disabled = SubResource("btn_home_normal")
+HomeButton/styles/focus = SubResource("focus")
+HomeRedButton/base_type = &"HomeButton"
+HomeRedButton/colors/font_hover_color = Color(1, 1, 1, 1)
+HomeRedButton/colors/font_focus_color = Color(1, 1, 1, 1)
+HomeRedButton/colors/font_pressed_color = Color(1, 1, 1, 1)
+HomeRedButton/colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+HomeRedButton/styles/hover = SubResource("btn_home_red_hover")
+HomeRedButton/styles/pressed = SubResource("btn_home_red_hover")
+HomeRedButton/styles/hover_pressed = SubResource("btn_home_red_hover")
+HomeBlueButton/base_type = &"HomeButton"
+HomeBlueButton/colors/font_hover_color = Color(1, 1, 1, 1)
+HomeBlueButton/colors/font_focus_color = Color(1, 1, 1, 1)
+HomeBlueButton/colors/font_pressed_color = Color(1, 1, 1, 1)
+HomeBlueButton/colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+HomeBlueButton/styles/hover = SubResource("btn_home_blue_hover")
+HomeBlueButton/styles/pressed = SubResource("btn_home_blue_hover")
+HomeBlueButton/styles/hover_pressed = SubResource("btn_home_blue_hover")
 CheckBox/colors/font_color = Color(0.867, 0.890, 0.949, 1)
 CheckBox/colors/font_hover_color = Color(1, 1, 1, 1)
 CheckBox/colors/font_pressed_color = Color(1, 1, 1, 1)

@@ -1,9 +1,10 @@
 extends Node
 
 const PuffSystem := preload("res://fx/puff_system.gd")
+const ExplosionFXScript := preload("res://fx/explosion_fx.gd")
 
 # Crash sites: where a jet hits the ground it burns for BURN_SECONDS with black smoke rising, then the
-# smoke thins out. Water impacts get no fire (YS adds a water plume, drawn by explosion_fx.gd); the impact
+# smoke thins out. Water impacts get no fire (water splash crown is triggered via explosion_fx.gd); the impact
 # fireball itself is YS's explosion (explosion_fx.gd). Input: the "crashes" list of get_aircraft_fx_state()
 # (stride 5: x, y, z, on_water, radius). The falling jet's smoke/fire trail is the C++ trail renderer's.
 # Cost: at most MAX_SITES sites, ~3 puffs per second each, all from the shared GPU-aged puff pool.
@@ -15,19 +16,25 @@ const SMOKE := Color(0.05, 0.05, 0.05, 0.85)
 const FIRE := Color(1.0, 0.5, 0.12, 0.95)
 
 var puffs: PuffSystem = null
+var explosions: ExplosionFXScript = null
 var quality: int = 1
 
 var sites_created: int = 0 # total since start (tests)
 var _sites: Array[Dictionary] = [] # { pos: Vector3, size: float, age: float, timer: float }
 
-func setup(p_puffs: PuffSystem) -> void:
+func setup(p_puffs: PuffSystem, p_explosions: ExplosionFXScript = null) -> void:
 	puffs = p_puffs
+	explosions = p_explosions
 
 func update(delta: float, crashes: PackedFloat32Array) -> void:
 	var rng := puffs.random()
 	for i in range(0, crashes.size(), 5):
 		if crashes[i + 3] > 0.5:
-			continue # water: YS water plume only
+			# Water impact: trigger water splash crown via ExplosionFX
+			if explosions != null:
+				var pos := Vector3(crashes[i], crashes[i + 1], crashes[i + 2])
+				explosions.trigger_water_crash(pos, crashes[i + 4])
+			continue
 		var pos := Vector3(crashes[i], crashes[i + 1], crashes[i + 2])
 		var size: float = clampf(crashes[i + 4] / 8.0, 0.6, 2.5) # 1.0 = fighter-sized (8 m radius)
 		# Impact burst: black smoke thrown up and out, fire at the centre

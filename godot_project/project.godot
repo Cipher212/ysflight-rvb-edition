@@ -36,3 +36,7 @@ ground_detail_on={
 "type": "float",
 "value": 1.0
 }
+daylight_strength={
+"type": "float",
+"value": 1.0
+}

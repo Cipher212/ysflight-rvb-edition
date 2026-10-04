@@ -46,6 +46,7 @@ public:
     Array get_active_explosions() const;
     Transform3D get_player_transform() const;
     Dictionary get_player_telemetry();
+    double get_terrain_height(double x, double z); // ground height (m) at a Godot-space x / z
     PackedVector3Array get_tower_positions() const;
     Color get_sky_color() const;
     Color get_map_base_color() const;  // the map's dominant colour by area (island maps: the sea)
@@ -58,6 +59,7 @@ public:
     void set_random_seed(int64_t seed);
     bool enable_player_autopilot();
     void debug_kill_player(); // test hook: the player aircraft is shot down
+    void debug_kill_airplane(int64_t search_key); // test hook: kill specific aircraft by search key
 
     // RvB tactical AI (ysce/src/autopilot/fsrvb*.cpp, sim/ai_setup, sim/ai_respawn)
     void set_rvb_ai_enabled(bool enabled);      // before load_yfs; false = stock YS AI (--stock-ai)
@@ -73,6 +75,9 @@ public:
     void event_leave_jet();                     // Esc x2: the player's aircraft is removed (not a death)
     void event_end();                           // ends the event now (pause menu "End event")
     Dictionary get_ai_state();
+    // New RvB AI ground operations (sim/ai_arrival): arrival test, --ai-arrival <RUNWAY>
+    int64_t start_ai_arrival(String runway);
+    Array get_ai_arrival_state();
     void set_sim_speed(int64_t steps_per_tick);  // AI soak runs only: >1 runs the sim faster than real time
 
     // Flight setup / respawn

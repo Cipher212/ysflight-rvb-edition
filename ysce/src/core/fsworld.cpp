@@ -2465,7 +2465,7 @@ YSRESULT FsWorld::LoadAirplaneTemplate(InitializationOption opt)
 	{
 		LoadAirplaneTemplateList(L".",L"aircraft",L"air",L"lst");
 	}
-	if(YSTRUE==opt.loadUserAir)
+	if(YSTRUE==opt.loadUserAir && userYsflightDir!=NULL && wcscmp(userYsflightDir,L".")!=0) // YSFlight RvB Edition, 2026-10-03: prevent duplicate load when local folder is used
 	{
 		LoadAirplaneTemplateList(userYsflightDir,L"aircraft",L"air",L"lst");
 	}
@@ -2772,7 +2772,7 @@ YSRESULT FsWorld::LoadGroundTemplate(InitializationOption opt)
 	{
 		LoadGroundTemplateList(L".",L"ground",L"gro",L"lst");
 	}
-	if(YSTRUE==opt.loadUserGnd)
+	if(YSTRUE==opt.loadUserGnd && userYsflightDir!=NULL && wcscmp(userYsflightDir,L".")!=0) // YSFlight RvB Edition, 2026-10-03: prevent duplicate load when local folder is used
 	{
 		LoadGroundTemplateList(userYsflightDir,L"ground",L"gro",L"lst");
 	}
@@ -2855,7 +2855,7 @@ YSRESULT FsWorld::LoadFieldTemplate(InitializationOption opt)
 			LoadFieldTemplateList(L".",L"scenary",L"sce",L"lst");
 		}
 	}
-	if(YSTRUE==opt.loadUserField)
+	if(YSTRUE==opt.loadUserField && userYsflightDir!=NULL && wcscmp(userYsflightDir,L".")!=0) // YSFlight RvB Edition, 2026-10-03: prevent duplicate load when local folder is used
 	{
 		LoadFieldTemplateList(userYsflightDir,L"scenery",L"sce",L"lst");
 	}

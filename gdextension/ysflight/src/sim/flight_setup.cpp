@@ -102,6 +102,15 @@ void kill_player(FsSimulation *sim) {
     }
 }
 
+void kill_airplane(FsSimulation *sim, int64_t search_key) {
+    if (sim != nullptr) {
+        FsAirplane *air = sim->FindAirplane((YSHASHKEY)search_key);
+        if (air != nullptr) {
+            air->Prop().SetFlightState(FSDEAD, FSDIEDOF_MISSILE);
+        }
+    }
+}
+
 bool enable_player_autopilot(FsSimulation *sim) {
     if (sim == nullptr || sim->GetPlayerAirplane() == nullptr) {
         return false;

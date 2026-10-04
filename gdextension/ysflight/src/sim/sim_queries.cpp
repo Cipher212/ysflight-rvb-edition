@@ -1,4 +1,4 @@
-﻿#include "sim/sim_queries.h"
+#include "sim/sim_queries.h"
 
 #include <cmath>
 
@@ -149,6 +149,8 @@ Array active_explosions(FsSimulation *sim) {
         d["slot_id"] = slot_id;
         d["uid"] = (slot_id << 32) | (int64_t)((uint32_t)exp->random);
         d["exp_type"] = (int64_t)exp->expType;
+        d["incident_type"] = (int64_t)exp->incidentType; // YSFlight RvB Edition, 2026-10-03
+        d["weapon_type"] = (int64_t)exp->weaponType;     // YSFlight RvB Edition, 2026-10-03
         d["pos"] = ys_to_godot_pos(exp->pos);
         d["time_passed"] = (double)exp->timePassed;
         d["time_remain"] = (double)exp->timeRemain;
@@ -158,6 +160,10 @@ Array active_explosions(FsSimulation *sim) {
         list.push_back(d);
     }
     return list;
+}
+
+double terrain_height(FsSimulation *sim, double godot_x, double godot_z) {
+    return sim != nullptr ? sim->GetFieldElevation(godot_x, -godot_z) : 0.0;
 }
 
 Dictionary player_telemetry(FsSimulation *sim, const MotionInterp &interp) {
@@ -181,7 +187,7 @@ Dictionary player_telemetry(FsSimulation *sim, const MotionInterp &interp) {
     dict["speed_kt"] = vel_ms * MS_TO_KT;
     dict["altitude_m"] = alt_m;
     dict["altitude_ft"] = alt_m * M_TO_FT;
-    dict["agl_m"] = player->GetPosition().y();
+    dict["agl_m"] = player->GetPosition().y() - sim->GetFieldElevation(player->GetPosition().x(), player->GetPosition().z());
     dict["vsi_fpm"] = prop.GetClimbRatioWithTimeDelay() * M_TO_FT * 60.0;
     dict["throttle"] = prop.GetThrottle();
     dict["afterburner"] = (prop.GetAfterBurner() == YSTRUE);

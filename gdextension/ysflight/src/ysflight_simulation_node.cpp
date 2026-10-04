@@ -17,6 +17,7 @@
 #include "core/ys_convert.h"
 #include "core/ys_headers.h"
 #include "render/scenery_builder.h"
+#include "sim/ai_arrival.h"
 #include "sim/ai_setup.h"
 #include "sim/flight_setup.h"
 #include "sim/player_input.h"
@@ -79,6 +80,7 @@ void YSFlightSimulation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_active_explosions"), &YSFlightSimulation::get_active_explosions);
     ClassDB::bind_method(D_METHOD("get_player_transform"), &YSFlightSimulation::get_player_transform);
     ClassDB::bind_method(D_METHOD("get_player_telemetry"), &YSFlightSimulation::get_player_telemetry);
+    ClassDB::bind_method(D_METHOD("get_terrain_height", "x", "z"), &YSFlightSimulation::get_terrain_height);
     ClassDB::bind_method(D_METHOD("get_tower_positions"), &YSFlightSimulation::get_tower_positions);
     ClassDB::bind_method(D_METHOD("get_sky_color"), &YSFlightSimulation::get_sky_color);
     ClassDB::bind_method(D_METHOD("get_map_base_color"), &YSFlightSimulation::get_map_base_color);
@@ -89,6 +91,7 @@ void YSFlightSimulation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_random_seed", "seed"), &YSFlightSimulation::set_random_seed);
     ClassDB::bind_method(D_METHOD("enable_player_autopilot"), &YSFlightSimulation::enable_player_autopilot);
     ClassDB::bind_method(D_METHOD("debug_kill_player"), &YSFlightSimulation::debug_kill_player);
+    ClassDB::bind_method(D_METHOD("debug_kill_airplane", "search_key"), &YSFlightSimulation::debug_kill_airplane);
     ClassDB::bind_method(D_METHOD("set_rvb_ai_enabled", "enabled"), &YSFlightSimulation::set_rvb_ai_enabled);
     ClassDB::bind_method(D_METHOD("set_ai_respawn_enabled", "enabled"), &YSFlightSimulation::set_ai_respawn_enabled);
     ClassDB::bind_method(D_METHOD("set_ai_ground_ops", "enabled"), &YSFlightSimulation::set_ai_ground_ops);
@@ -100,6 +103,8 @@ void YSFlightSimulation::_bind_methods() {
     ClassDB::bind_method(D_METHOD("event_end"), &YSFlightSimulation::event_end);
     ClassDB::bind_method(D_METHOD("apply_player_loadout", "preset"), &YSFlightSimulation::apply_player_loadout);
     ClassDB::bind_method(D_METHOD("get_ai_state"), &YSFlightSimulation::get_ai_state);
+    ClassDB::bind_method(D_METHOD("start_ai_arrival", "runway"), &YSFlightSimulation::start_ai_arrival);
+    ClassDB::bind_method(D_METHOD("get_ai_arrival_state"), &YSFlightSimulation::get_ai_arrival_state);
     ClassDB::bind_method(D_METHOD("set_sim_speed", "steps_per_tick"), &YSFlightSimulation::set_sim_speed);
     ClassDB::bind_method(D_METHOD("get_airplane_template_names"), &YSFlightSimulation::get_airplane_template_names);
     ClassDB::bind_method(D_METHOD("get_start_position_names"), &YSFlightSimulation::get_start_position_names);
@@ -219,6 +224,7 @@ void YSFlightSimulation::load_yfs(String file_path) {
     world->PrepareSimulation();
     sim = world->GetSimulation();
     ysgd::feed_start_runways(world, sim);
+    ysgd::load_airfield_plans("res://ai");
 
     ysgd::set_breadcrumb("load_yfs: build_scenery");
     map_base_color = ysgd::build_scenery(sim, scenery_root, materials, mesh_cache);
@@ -372,6 +378,8 @@ YSFlightSimulation::FrameStamp YSFlightSimulation::current_stamp() const {
     return s;
 }
 
+double YSFlightSimulation::get_terrain_height(double x, double z) { return ysgd::terrain_height(sim, x, z); }
+
 Dictionary YSFlightSimulation::get_player_telemetry() {
     const FrameStamp now = current_stamp();
     if (!(telemetry_stamp == now)) {
@@ -428,6 +436,7 @@ void YSFlightSimulation::set_interpolation_enabled(bool enabled) { interp.set_en
 void YSFlightSimulation::set_random_seed(int64_t seed) { srand((unsigned int)seed); }
 bool YSFlightSimulation::enable_player_autopilot() { return ysgd::enable_player_autopilot(sim); }
 void YSFlightSimulation::debug_kill_player() { ysgd::kill_player(sim); }
+void YSFlightSimulation::debug_kill_airplane(int64_t search_key) { ysgd::kill_airplane(sim, search_key); }
 void YSFlightSimulation::set_rvb_ai_enabled(bool enabled) { ysgd::set_rvb_ai_enabled(enabled); }
 void YSFlightSimulation::set_ai_respawn_enabled(bool enabled) { ai_respawn.set_enabled(enabled); }
 void YSFlightSimulation::set_ai_ground_ops(bool enabled) { ysgd::set_rvb_ground_ops(enabled); }
@@ -481,6 +490,9 @@ Dictionary YSFlightSimulation::get_ai_state() {
     d["aircraft"] = ysgd::ai_aircraft_list(sim);
     return d;
 }
+
+int64_t YSFlightSimulation::start_ai_arrival(String runway) { return ysgd::start_ai_arrival(sim, runway); }
+Array YSFlightSimulation::get_ai_arrival_state() { return ysgd::ai_arrival_state(sim); }
 
 void YSFlightSimulation::set_sim_speed(int64_t steps_per_tick) {
     sim_speed = (int)(steps_per_tick < 1 ? 1 : (steps_per_tick > 16 ? 16 : steps_per_tick));

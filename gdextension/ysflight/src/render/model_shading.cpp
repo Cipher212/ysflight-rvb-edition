@@ -26,8 +26,6 @@ constexpr double AO_RADIUS_MIN = 1.0;       // ...clamped (m)
 constexpr double AO_RADIUS_MAX = 5.0;
 constexpr float AO_STRENGTH = 0.55f;        // brightness lost where fully enclosed
 constexpr float MIN_SHADE = 0.5f;
-constexpr float BELLY_DARK = 0.85f;         // aircraft: brightness at the bottom of the model...
-constexpr float BELLY_SPAN = 0.5f;          // ...back to full over this fraction of its height
 constexpr float BASE_DARK = 0.62f;          // ground: brightness where it meets the ground...
 constexpr double BASE_HEIGHT_FRACTION = 0.3;// ...back to full over this fraction of its height, clamped (m)
 constexpr double BASE_HEIGHT_MIN = 0.4;
@@ -192,7 +190,7 @@ double occlusion(const Grid &g, const YsVec3 &p, const YsVec3 &n, double radius,
     return sum / dirs.size();
 }
 
-ModelShade shade(const Geometry &g, ShadeKind kind) {
+ModelShade shade_ground_geometry(const Geometry &g) {
     ModelShade out;
     if (g.tris.empty() || g.hi.x() < g.lo.x()) {
         return out;
@@ -216,11 +214,7 @@ ModelShade shade(const Geometry &g, ShadeKind kind) {
             f = 1.0f - AO_STRENGTH * (float)ao;
         }
         const double up = v.pos.y() - g.lo.y();
-        if (kind == ShadeKind::AIRCRAFT) {
-            f *= BELLY_DARK + (1.0f - BELLY_DARK) * smooth01(up / (height * BELLY_SPAN));
-        } else {
-            f *= BASE_DARK + (1.0f - BASE_DARK) * smooth01(up / base_h);
-        }
+        f *= BASE_DARK + (1.0f - BASE_DARK) * smooth01(up / base_h);
         out[v.part][v.key] = std::max(f, MIN_SHADE);
     }
     return out;
@@ -232,7 +226,7 @@ double ms_since(std::chrono::steady_clock::time_point t0) {
 
 } // namespace
 
-ModelShade bake_dnm_shade(FsVisualDnm &vis, ShadeKind kind) {
+ModelShade bake_ground_dnm_shade(FsVisualDnm &vis) {
     const auto t0 = std::chrono::steady_clock::now();
     auto dnm = vis.GetDnmPtr();
     if (dnm == nullptr) {
@@ -249,7 +243,7 @@ ModelShade bake_dnm_shade(FsVisualDnm &vis, ShadeKind kind) {
         }
         add_shell(g, *node, state.GetNodeToRootTransformation(node), node, state.GetShow(node) == YSTRUE);
     }
-    ModelShade out = shade(g, kind);
+    ModelShade out = shade_ground_geometry(g);
     log_line(String("Shading: baked ") + String::num_int64((int64_t)g.verts.size()) + " vertices in " +
              String::num(ms_since(t0), 1) + " ms");
     return out;
@@ -260,7 +254,7 @@ VertexShade bake_shell_shade(const YsShellExt &shell) {
     YsMatrix4x4 identity;
     identity.Initialize();
     add_shell(g, shell, identity, &shell, true);
-    ModelShade out = shade(g, ShadeKind::GROUND);
+    ModelShade out = shade_ground_geometry(g);
     auto it = out.find(&shell);
     return it != out.end() ? std::move(it->second) : VertexShade();
 }

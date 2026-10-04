@@ -1184,11 +1184,11 @@ void FsWeapon::HitGround(
 
 						if(evg==NULL && collType==1 && areaType==YSSCNAREA_WATER)
 						{
-							explode->WaterPlume(ctime,pos,3.0,1.0,10.0,NULL,YSFALSE);
+							explode->WaterPlume(ctime,pos,3.0,1.0,10.0,NULL,YSFALSE,FS_INCIDENT_GUN_IMPACT,type); // YSFlight RvB Edition, 2026-10-03
 						}
 						else
 						{
-							explode->Explode(ctime,pos,1.0,0.0,5.0,YSTRUE,NULL,YSFALSE);
+							explode->Explode(ctime,pos,1.0,0.0,5.0,YSTRUE,NULL,YSFALSE,FS_INCIDENT_GUN_IMPACT,type); // YSFlight RvB Edition, 2026-10-03
 						}
 					}
 					step=(step+1)&255;
@@ -1276,6 +1276,8 @@ void FsWeapon::HitGround(
 					{
 						pos=shellItsc;
 					}
+					int defIncType = (type == FSWEAPON_AIM9 || type == FSWEAPON_AIM9X || type == FSWEAPON_AIM120) ?
+						FS_INCIDENT_AIR_TO_AIR_MISSILE : FS_INCIDENT_GROUND_ORDNANCE; // YSFlight RvB Edition, 2026-10-03
 					if(evg==NULL && collType==1 && areaType==YSSCNAREA_WATER)
 					{
 						if (shouldJettison == YSTRUE)
@@ -1285,7 +1287,7 @@ void FsWeapon::HitGround(
 						}
 						else
 						{
-							explode->WaterPlume(ctime, pos, 3.0, 4.0, 20.0, NULL, YSFALSE);
+							explode->WaterPlume(ctime, pos, 3.0, 4.0, 20.0, NULL, YSFALSE, defIncType, type); // YSFlight RvB Edition, 2026-10-03
 						}
 					}
 					else
@@ -1297,7 +1299,7 @@ void FsWeapon::HitGround(
 						}
 						else
 						{
-							explode->Explode(ctime, pos, 3.0, 0.0, 20.0, YSTRUE, NULL, YSFALSE);
+							explode->Explode(ctime, pos, 3.0, 0.0, 20.0, YSTRUE, NULL, YSFALSE, defIncType, type); // YSFlight RvB Edition, 2026-10-03
 						}
 					}
 					break;
@@ -1376,7 +1378,7 @@ YSBOOL FsWeapon::HitObject(
 					AddKillCredit(killCredit,&obj,ctime);
 				}
 
-				explosion->Explode(ctime,pos,20.0,5.0,range,YSTRUE,NULL,YSTRUE);
+				explosion->Explode(ctime,pos,20.0,5.0,range,YSTRUE,NULL,YSTRUE,FS_INCIDENT_AIR_TO_AIR_MISSILE,type); // YSFlight RvB Edition, 2026-10-03
 
 				lifeRemain=0.0;
 				target=NULL;
@@ -1422,7 +1424,7 @@ YSBOOL FsWeapon::HitObject(
 						}
 						else
 						{
-							explosion->Explode(ctime,intersect,5.0,3.0,3.0,YSTRUE,NULL,YSTRUE);
+							explosion->Explode(ctime,intersect,5.0,3.0,3.0,YSTRUE,NULL,YSTRUE,FS_INCIDENT_GUN_IMPACT,type); // YSFlight RvB Edition, 2026-10-03
 						}
 					}
 
@@ -1465,7 +1467,7 @@ YSBOOL FsWeapon::HitObject(
 						}
 						else
 						{
-							explosion->Explode(ctime,intersect,5.0,3.0,3.0,YSTRUE,NULL,YSTRUE);
+							explosion->Explode(ctime,intersect,5.0,3.0,3.0,YSTRUE,NULL,YSTRUE,FS_INCIDENT_GROUND_ORDNANCE,type); // YSFlight RvB Edition, 2026-10-03
 						}
 					}
 
@@ -1504,7 +1506,9 @@ YSBOOL FsWeapon::HitObject(
 						}
 						else
 						{
-							explosion->Explode(ctime,pos,20.0,5.0,20.0,YSTRUE,NULL,YSTRUE);
+							int incType = (type == FSWEAPON_AIM9 || type == FSWEAPON_AIM9X || type == FSWEAPON_AIM120) ?
+								FS_INCIDENT_AIR_TO_AIR_MISSILE : FS_INCIDENT_GROUND_ORDNANCE; // YSFlight RvB Edition, 2026-10-03
+							explosion->Explode(ctime,pos,20.0,5.0,20.0,YSTRUE,NULL,YSTRUE,incType,type);
 						}
 					}
 
@@ -1534,7 +1538,7 @@ void FsWeapon::ExplodeBomb
 	FsAirplane *air;
 	FsGround *gnd;
 
-	explosion->Explode(ctime,pos,10.0,0.0,rad+5.0,YSTRUE,NULL,YSFALSE);
+	explosion->Explode(ctime,pos,10.0,0.0,rad+5.0,YSTRUE,NULL,YSFALSE,FS_INCIDENT_GROUND_ORDNANCE,type); // YSFlight RvB Edition, 2026-10-03
 
 	FsSoundSetOneTime(FSSND_ONETIME_BLAST);
 
@@ -1600,7 +1604,7 @@ void FsWeapon::ExplodeBombInWater(
 	FsAirplane *air;
 	FsGround *gnd;
 
-	explosion->WaterPlume(ctime,pos,10.0,rad,rad*10.0,NULL,YSFALSE);
+	explosion->WaterPlume(ctime,pos,10.0,rad,rad*10.0,NULL,YSFALSE,FS_INCIDENT_GROUND_ORDNANCE,type); // YSFlight RvB Edition, 2026-10-03
 
 	FsSoundSetOneTime(FSSND_ONETIME_BLAST);
 

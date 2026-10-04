@@ -1,19 +1,23 @@
-// Explosion flash: bright core, star spikes and an expanding shock ring on a camera-facing quad
-// (fx/explosion_fx.gd). Written once at spawn, then aged on the GPU.
+// Explosion flash: PS2-style sprite-based fireball and flash using GPU-aged MultiMesh
+// (fx/explosion_fx.gd).
 // Instance data:
-//   MODEL_MATRIX[1].xyz = (start size, end size, life s)   MODEL_MATRIX[2].xy = (spawn time, roll)
+//   MODEL_MATRIX[1].xyz = (start size, end size, life s)
+//   MODEL_MATRIX[2].xyz = (spawn time, roll, atlas frame index)
 //   MODEL_MATRIX[3].xyz = position   COLOR = colour
 shader_type spatial;
 render_mode unshaded, cull_disabled, blend_add, depth_draw_never, shadows_disabled;
 
 uniform float now;
+uniform sampler2D explosion_atlas : filter_linear, repeat_disable;
 varying float v_progress;
+varying float v_frame;
 
 void vertex() {
 	float life = MODEL_MATRIX[1].z;
 	float age = now - MODEL_MATRIX[2].x;
 	float t = age / life;
 	v_progress = t;
+	v_frame = MODEL_MATRIX[2].z;
 	if (age < 0.0 || t >= 1.0) {
 		POSITION = vec4(0.0, 0.0, -2.0, 1.0);
 	} else {
@@ -30,18 +34,26 @@ void vertex() {
 
 void fragment() {
 	vec2 p = UV * 2.0 - 1.0;
-	float r = length(p);
+	float r2 = dot(p, p);
+	float edge_mask = clamp(1.0 - smoothstep(0.65, 0.98, sqrt(r2)), 0.0, 1.0);
+	
 	float progress = v_progress;
-	float core = pow(clamp(1.0 - r * 1.35, 0.0, 1.0), 2.4) * clamp(1.0 - progress * 2.6, 0.0, 1.0);
-	float spk_main = pow(clamp(1.0 - min(abs(p.x), abs(p.y)) * 11.0, 0.0, 1.0), 2.5) * pow(clamp(1.0 - r, 0.0, 1.0), 1.4);
-	vec2 pr = vec2(p.x + p.y, p.x - p.y) * 0.7071;
-	float spk_diag = pow(clamp(1.0 - min(abs(pr.x), abs(pr.y)) * 15.0, 0.0, 1.0), 2.5) * pow(clamp(1.0 - r * 1.25, 0.0, 1.0), 1.6);
-	float spikes = (spk_main + spk_diag * 0.6) * clamp(1.0 - progress * 1.8, 0.0, 1.0);
-	float ring_r = mix(0.18, 0.92, pow(progress, 0.65));
-	float ring_w = mix(0.09, 0.035, progress);
-	float ring = exp(-pow((r - ring_r) / max(ring_w, 0.01), 2.0)) * (1.0 - progress);
-	float total = core * 1.8 + spikes * 1.5 + ring * 1.35;
-	vec3 col = mix(COLOR.rgb, vec3(1.0, 0.99, 0.92), clamp(core + spikes * 0.6, 0.0, 1.0));
-	ALBEDO = col * total * 2.0;
-	ALPHA = clamp(total * COLOR.a * step(r, 1.0), 0.0, 1.0);
+	float fade = clamp(1.0 - progress, 0.0, 1.0);
+
+	float tex_val = 0.0;
+	if (v_frame >= 0.0) {
+		float frame = clamp(floor(v_frame + 0.05), 0.0, 4.0);
+		vec2 atlas_uv = vec2((clamp(UV.x, 0.0, 1.0) + frame) / 5.0, clamp(UV.y, 0.0, 1.0));
+		tex_val = texture(explosion_atlas, atlas_uv).r * edge_mask;
+	} else {
+		tex_val = pow(clamp(1.0 - sqrt(r2), 0.0, 1.0), 2.0) * edge_mask;
+	}
+
+	vec3 core_white = vec3(1.0, 0.98, 0.88);
+	vec3 fire_color = mix(COLOR.rgb * 0.45, COLOR.rgb, smoothstep(0.12, 0.55, tex_val));
+	fire_color = mix(fire_color, core_white, smoothstep(0.65, 0.95, tex_val));
+
+	float intensity = tex_val * fade * COLOR.a;
+	ALBEDO = fire_color * intensity * 2.2;
+	ALPHA = clamp(intensity, 0.0, 1.0);
 }

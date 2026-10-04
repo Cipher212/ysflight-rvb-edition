@@ -1,6 +1,7 @@
 #include "sim/event_match.h"
 
 #include <algorithm>
+#include <unordered_set>
 
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/variant.hpp>
@@ -44,10 +45,14 @@ Array EventMatch::aircraft_catalog(FsWorld *world) {
     if (world == nullptr) {
         return out;
     }
+    std::unordered_set<std::string> seen;
     for (int i = 0;; ++i) {
         const char *n = world->GetAirplaneTemplateName(i);
         if (n == nullptr) {
             break;
+        }
+        if (!seen.insert(n).second) {
+            continue;
         }
         const String id(n);
         const String up = id.to_upper();

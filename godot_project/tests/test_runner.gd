@@ -70,6 +70,7 @@ func _run() -> void:
 	await _test_startup()
 	await _test_motion()
 	await _test_throttle()
+	await _test_burner_showcase()
 	await _test_gear()
 	await _test_gun()
 	await _test_missile()
@@ -108,6 +109,57 @@ func _test_throttle() -> void:
 	_check("throttle input reaches the sim", thr < 0.4, "throttle %.2f after setting 0.2" % thr)
 	main.controls.current_throttle = 1.0
 	main.controls._afterburner_lit = true
+
+func _test_burner_showcase() -> void:
+	await _seconds(1.0)
+	var hud_layer: CanvasLayer = main.get_node_or_null("HUDLayer")
+	if hud_layer != null:
+		hud_layer.visible = false
+	
+	main.camera_rig.set_mode(main.camera_rig.CamMode.HORIZON_CHASE)
+
+	# Shot 1: Direct rear close-up (looking straight into nozzle)
+	main.camera_rig.cam_yaw = 0.0
+	main.camera_rig.cam_pitch = -0.04
+	main.camera_rig.cam_distance = 11.5
+	await _seconds(0.5)
+	await _shot("burner_01_rear_close")
+
+	# Shot 2: 3/4 Quartering rear
+	main.camera_rig.cam_yaw = 0.45
+	main.camera_rig.cam_pitch = -0.15
+	main.camera_rig.cam_distance = 14.0
+	await _seconds(0.5)
+	await _shot("burner_02_quarter_rear")
+
+	# Shot 3: Side profile
+	main.camera_rig.cam_yaw = 1.35
+	main.camera_rig.cam_pitch = -0.08
+	main.camera_rig.cam_distance = 16.0
+	await _seconds(0.5)
+	await _shot("burner_03_side_profile")
+
+	# Shot 4: Low angle looking up at burner against sky
+	main.camera_rig.cam_yaw = 0.25
+	main.camera_rig.cam_pitch = 0.22
+	main.camera_rig.cam_distance = 13.0
+	await _seconds(0.5)
+	await _shot("burner_04_low_angle")
+
+	# Shot 5: High angle rear top-down
+	main.camera_rig.cam_yaw = -0.35
+	main.camera_rig.cam_pitch = -0.38
+	main.camera_rig.cam_distance = 15.0
+	await _seconds(0.5)
+	await _shot("burner_05_high_angle")
+
+	# Restore camera and HUD
+	main.camera_rig.cam_yaw = 0.0
+	main.camera_rig.cam_pitch = main.camera_rig.DEFAULT_CAM_PITCH
+	main.camera_rig.cam_distance = 18.0
+	if hud_layer != null:
+		hud_layer.visible = true
+	_check("burner showcase captured", true, "5 angles")
 
 func _test_gear() -> void:
 	var before: float = float(sim.get_player_telemetry().get("gear", 0.0))

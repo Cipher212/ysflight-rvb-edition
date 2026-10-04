@@ -114,10 +114,10 @@ VisualSync::EntityVisual VisualSync::create_visual(FsVisualDnm &vis, const Strin
     ev.node_tfm.resize(num_nodes);
     ev.node_has_tfm.assign(num_nodes, 0);
     std::unordered_map<const void *, Node3D *> ptr_to_gnode;
-    // Baked shading, once per model type (its meshes are then cached).
+    // Aircraft keep their authored colours; only ground models get baked shading.
     ModelShade shade;
-    if (kind != VisualKind::PLAIN && shaded_models.insert(ev.dnm_ptr).second) {
-        shade = bake_dnm_shade(vis, kind == VisualKind::AIRCRAFT ? ShadeKind::AIRCRAFT : ShadeKind::GROUND);
+    if (kind == VisualKind::GROUND && shaded_models.insert(ev.dnm_ptr).second) {
+        shade = bake_ground_dnm_shade(vis);
     }
     for (int i = 0; i < num_nodes; ++i) {
         auto *dnm_node = node_array[i];

@@ -405,6 +405,7 @@ typedef enum
 	FSAUTOPILOT_SPEEDONLY,
 
 	FSAUTOPILOT_RVBTACTICAL,  // RvB tactical AI (YSFlight RvB Edition, 2026-09-30); saved as DOGFIGHT
+	FSAUTOPILOT_RVBARRIVAL,   // RvB arrival follower (YSFlight RvB Edition, 2026-10-01); saves no intention
 
 } FSAUTOPILOTTYPE;
 

@@ -43,8 +43,9 @@ func setup(p_main: Node, p_sim: YSFlightSimulation) -> void:
 	var tel: Dictionary = sim.get_player_telemetry()
 	selected_aircraft = str(tel.get("identifier", ""))
 	selected_team = 1 if int(tel.get("iff", 0)) == 3 else 0
-	# Off in benchmarks (comparable runs) and in offline events (the event's spawn menu takes over)
-	auto_respawn = not bool(main.get("benchmark_mode")) and not _menus_spawn()
+	# Off in benchmarks (comparable runs), arrival tests (a lost jet is a result) and in offline events (the
+	# event's spawn menu takes over)
+	auto_respawn = not bool(main.get("benchmark_mode")) and not bool(main.get("arrival_test_mode")) and not _menus_spawn()
 	_build_panel()
 
 func _process(delta: float) -> void:

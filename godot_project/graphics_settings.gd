@@ -46,7 +46,7 @@ func _on_controls_changed(key: String) -> void:
 		var preset: String = str(controls.get_value("graphics_preset", "Medium"))
 		if preset != "Custom":
 			_apply_preset(preset)
-	elif key in ["render_scale", "msaa", "fxaa", "draw_distance_km", "fx_density"] or key in EFFECT_KEYS:
+	elif key in ["render_scale", "msaa", "fxaa", "draw_distance_km", "fx_density", "low_clouds"] or key in EFFECT_KEYS:
 		_set_preset_custom()
 		_apply_setting(key)
 	elif key == "vsync":
@@ -108,6 +108,7 @@ func apply_all_settings() -> void:
 	_apply_fx_quality()
 	for key in EFFECT_KEYS:
 		_apply_effect(key, bool(controls.get_value(key, true)))
+	_apply_low_clouds()
 
 func _apply_benchmark_defaults() -> void:
 	# In benchmark mode, enforce Medium values and leave vsync to benchmark.gd
@@ -124,6 +125,8 @@ func _apply_benchmark_defaults() -> void:
 		main.set_effects_quality(1) # Medium
 		for key in EFFECT_KEYS:
 			_apply_effect(key, true)
+		if main.low_cloud_layer != null:
+			main.low_cloud_layer.set_clouds_enabled(false)
 
 func _apply_setting(key: String) -> void:
 	match key:
@@ -137,9 +140,17 @@ func _apply_setting(key: String) -> void:
 			_apply_draw_distance()
 		"fx_density":
 			_apply_fx_quality()
+		"low_clouds":
+			_apply_low_clouds()
 		_:
 			if key in EFFECT_KEYS and controls != null:
 				_apply_effect(key, bool(controls.get_value(key, true)))
+
+func _apply_low_clouds() -> void:
+	if main == null or main.low_cloud_layer == null or controls == null:
+		return
+	var on: bool = bool(controls.get_value("low_clouds", true))
+	main.low_cloud_layer.set_clouds_enabled(on)
 
 func _apply_render_scale() -> void:
 	var vp: Viewport = get_viewport()

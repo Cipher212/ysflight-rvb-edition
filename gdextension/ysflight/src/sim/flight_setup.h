@@ -28,6 +28,7 @@ bool respawn_player(FsWorld *world, FsSimulation *sim, const godot::String &airp
 // Works on the aircraft's current stores via YS's own UNLOADWP / LOADWEPN commands.
 bool apply_player_loadout(FsSimulation *sim, const godot::String &preset);
 void kill_player(FsSimulation *sim);
+void kill_airplane(FsSimulation *sim, int64_t search_key);
 // Hands the player's aircraft to the AI (benchmark and --ai-player): the RvB AI if the aircraft has an
 // RvB role, else the YS dogfight AI.
 bool enable_player_autopilot(FsSimulation *sim);

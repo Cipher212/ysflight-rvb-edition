@@ -7,12 +7,13 @@ render_mode unshaded, blend_add, depth_test_disabled, depth_draw_never, cull_dis
 uniform vec3 to_sun = vec3(0.0, 1.0, 0.0);
 uniform float fade_from = 0.34; // cos of the view angle where the glare starts
 uniform float fade_full = 0.7;
+uniform float sun_strength = 1.0;
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest, repeat_disable;
 
 const vec3 GLOW = vec3(1.0, 0.9, 0.72);
 const float BLOOM = 0.3;
 const float BLOOM_FALLOFF = 5.0;
-const float VEIL = 0.08;
+const float VEIL = 0.04;
 const float GHOSTS = 0.06;
 const float TAP = 0.008; // screen fraction between occlusion taps
 const float GHOST_POS[3] = {0.45, 0.9, 1.5};    // along the line sun -> centre -> beyond (1 = mirrored sun)
@@ -53,6 +54,6 @@ void fragment() {
 	// Lens ghosts only while the sun is in the frame (fading out just past the screen edge).
 	vec2 outside = max(-sun, sun - 1.0);
 	float in_frame = 1.0 - smoothstep(0.0, 0.12, max(outside.x, outside.y));
-	ALBEDO = (GLOW * (bloom + veil) + ghosts * GHOSTS * in_frame) * clear * facing;
+	ALBEDO = (GLOW * (bloom + veil) + ghosts * GHOSTS * in_frame) * clear * facing * sun_strength;
 	ALPHA = 1.0;
 }

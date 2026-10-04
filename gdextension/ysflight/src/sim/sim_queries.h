@@ -33,6 +33,8 @@ godot::Dictionary player_telemetry(FsSimulation *sim, const MotionInterp &interp
 
 godot::PackedVector3Array tower_positions(FsSimulation *sim);
 godot::Color sky_color(FsSimulation *sim);
+// Height of the ground (terrain or sea) at a Godot-space point (x, -z = YS z), metres; 0 without a field.
+double terrain_height(FsSimulation *sim, double godot_x, double godot_z);
 
 } // namespace ysgd
 

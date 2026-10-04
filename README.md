@@ -6,6 +6,12 @@ features. Right now you can set up and fly an offline RvB event against the AI o
 (up to 18 vs 18).
 
 **New in v0.4.0:**
+- **Home Screen Atmosphere:** Procedural wireframe terrain flyby, authentic 2D vector jet passes, dogfights, afterburner trails, intro merge with sonic boom shockwave, and tactical HUD heading tape inspired by the RvB website.
+- **Dynamic Low-Poly Clouds:** Atmospheric cumulus cloud banks drifting across the sky between 3500–5400 ft with wind shear, distance fading, and active camera immersion fog.
+- **Restrained Gradient Sky & Day/Night Atmosphere:** Realistic time-of-day sky transitions coordinated with lighting, shadows, and environment colors.
+- **PS2-Style Incident Explosions & Water Splashes:** Classified explosion sprites and dynamic low-poly water-splash crowns for crashes and ordnance impacts.
+- **Luavi Runway Extensions & AI Arrivals:** Extended six Luavi runways by 200 m with refined holding patterns, approach glide slopes, and landing rollouts for smooth AI operations.
+- **Unique Aircraft Catalog:** Fixed duplicate aircraft template listings across menus and roster builder.
 - **Free Flight** (main menu): just you on the map, no enemies (the map's SAM sites and ships hold fire). Pick
   any aircraft and start; **Esc** pauses and opens the menu.
 - **Every menu in the RvB style:** a new Settings window with tabs, a loading screen, an Online page

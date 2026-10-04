@@ -28,18 +28,41 @@ static func make_screen(root: Control) -> void:
 static func fit_to_window(root: Control) -> void:
 	root.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	var apply := func() -> void:
-		var win: Vector2 = root.get_viewport().get_visible_rect().size
+		if not is_instance_valid(root) or not root.is_inside_tree():
+			return
+		var vp: Viewport = root.get_viewport()
+		if vp == null:
+			return
+		var win: Vector2 = vp.get_visible_rect().size
 		var s: float = maxf(minf(win.x / DESIGN_SIZE.x, win.y / DESIGN_SIZE.y), MIN_SCALE)
 		root.scale = Vector2(s, s)
 		root.position = Vector2.ZERO
 		root.size = win / s
-	var hook := func() -> void:
-		apply.call()
-		root.get_viewport().size_changed.connect(apply)
+
+	var vp_ref: Array = [null]
+	var disconnect_vp := func() -> void:
+		var target_vp: Viewport = vp_ref[0]
+		if target_vp == null and is_instance_valid(root) and root.is_inside_tree():
+			target_vp = root.get_viewport()
+		if is_instance_valid(target_vp) and target_vp.size_changed.is_connected(apply):
+			target_vp.size_changed.disconnect(apply)
+		vp_ref[0] = null
+
+	var connect_vp := func() -> void:
+		disconnect_vp.call()
+		if not is_instance_valid(root) or not root.is_inside_tree():
+			return
+		var current_vp := root.get_viewport()
+		if is_instance_valid(current_vp):
+			vp_ref[0] = current_vp
+			apply.call()
+			if not current_vp.size_changed.is_connected(apply):
+				current_vp.size_changed.connect(apply)
+
+	root.tree_entered.connect(connect_vp)
+	root.tree_exiting.connect(disconnect_vp)
 	if root.is_inside_tree():
-		hook.call()
-	else:
-		root.tree_entered.connect(hook, CONNECT_ONE_SHOT)
+		connect_vp.call()
 
 # Loading screen for the seconds main.tscn takes to load a map. Added to the tree root, so it survives the scene
 # change; main.gd removes it (hide_loading) once the first frame of the flight is ready. Call it, wait two frames
@@ -118,6 +141,8 @@ static func row(parent: Control, key: String, control: Control, key_width: float
 	h.add_theme_constant_override("separation", 14)
 	var k := label(key, "SectionLabel")
 	k.custom_minimum_size = Vector2(key_width, 0)
+	k.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	k.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(k)
 	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(control)

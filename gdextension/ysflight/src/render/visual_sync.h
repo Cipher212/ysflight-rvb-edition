@@ -99,7 +99,7 @@ private:
     const Materials &mats;
     ShellMeshCache &mesh_cache;
     BurnerMeshCache burner_meshes;
-    std::unordered_set<const void *> shaded_models; // DNMs whose baked shading is in the mesh cache
+    std::unordered_set<const void *> shaded_models; // ground DNMs whose baked shading is in the mesh cache
     float burner_seed = 0.0f; // per-flame shader seed (golden-ratio steps), so flames don't flicker in sync
 
     godot::Node3D *airplanes_root = nullptr;

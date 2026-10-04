@@ -5,7 +5,7 @@ extends RefCounted
 # less bright and toy-like. All of it runs inside Godot's tone-mapping pass, which runs every frame anyway:
 # no extra pass, one small texture lookup per pixel.
 
-const EXPOSURE := 1.1          # tuned on screenshots: darker and less toy-like than before, sky close to it
+const EXPOSURE := 1.0          # restrained daylight; ambient fill still keeps aircraft undersides readable
 const WHITE := 6.0
 const SATURATION := 0.72
 const CONTRAST := 1.08
