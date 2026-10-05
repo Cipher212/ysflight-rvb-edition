@@ -4,7 +4,8 @@ import os
 env = SConscript("../godot-cpp/SConstruct").Clone()
 
 # Disable doc generation for now
-env.Append(LINKFLAGS=["/IGNORE:4088", "/WX:NO", "/DEBUG", "/MAP"], LIBS=["Gdi32", "User32", "shell32", "Advapi32", "Ws2_32", "Ole32"])
+if env["platform"] == "windows":
+    env.Append(LINKFLAGS=["/IGNORE:4088", "/WX:NO", "/DEBUG", "/MAP"], LIBS=["Gdi32", "User32", "shell32", "Advapi32", "Ws2_32", "Ole32"])
 
 # Include paths for YSFlight core and public libraries
 env.Append(CPPPATH=[
@@ -54,7 +55,8 @@ ys_src_dirs = [
     "vehicle", "pathplanning", "config", "externalconsole", "graphics/common", "graphics/null", "platform/nownd", "platform/common"
 ]
 
-env.Append(CPPDEFINES=["WIN32", "_WIN32"])
+if env["platform"] == "windows":
+    env.Append(CPPDEFINES=["WIN32", "_WIN32"])
 
 for d in ys_src_dirs:
     sources += Glob(f"../../ysce/src/{d}/*.cpp")
@@ -65,38 +67,57 @@ public_src_dirs = [
     "ysgebl/src/kernel", "ysgebl/src/kernelutil", "ysgebl/src/shellrender", "yssystemfont/src",
     "ysglcpp/src", "ystexturemanager/src",
     "ysglcpp/src/nownd", "ystexturemanager/src/null", "yssystemfont/src/null", "ysgebl/src/shellrender/nownd",
-    "ysfontrenderer/src", "yssocket/src", "fsguilib/src", "fsguilib/src/nownd", "fsguilib/src/miscdlg", "fsguilib/filedialog", "fsguilib/src/windows", "fssimplewindow/src", "fssimplewindow/src/nownd", "ysbitmapfont/src"
+    "ysfontrenderer/src", "yssocket/src", "fsguilib/src", "fsguilib/src/nownd", "fsguilib/src/miscdlg", "fsguilib/filedialog",
+    "fssimplewindow/src", "fssimplewindow/src/nownd", "ysbitmapfont/src"
 ]
+# Platform-specific GUI timer/clipboard source.
+if env["platform"] == "windows":
+    public_src_dirs.append("fsguilib/src/windows")
+else:
+    public_src_dirs.append("fsguilib/src/linux")
 for d in public_src_dirs:
     sources += Glob(f"../../ysce_public/src/{d}/*.cpp")
 
 sources += [File("../../ysce_public/src/ysbitmapfont/src/ysglfontdata.c"), File("../../ysce_public/src/ysbitmapfont/src/ysglfontbitmaputil.c"), File("../../ysce_public/src/ysbitmapfont/src/ysglmaketextbitmap.c")]
 
 filtered_sources = []
-filtered_sources += [File("../../ysce_public/src/ysport/src/windows/yswin32fileio.cpp"), File("../../ysce_public/src/ysport/src/windows/yswin32specialpath.cpp"), File("../../ysce_public/src/ysport/src/windows/yswin32locale.cpp"), File("../../ysce_public/src/ysport/src/windows/yswin32encoding.cpp"), File("../../ysce_public/src/ysport/src/windows/yswin32fileinfo.cpp")]
+if env["platform"] == "windows":
+    filtered_sources += [
+        File("../../ysce_public/src/ysport/src/windows/yswin32fileio.cpp"),
+        File("../../ysce_public/src/ysport/src/windows/yswin32specialpath.cpp"),
+        File("../../ysce_public/src/ysport/src/windows/yswin32locale.cpp"),
+        File("../../ysce_public/src/ysport/src/windows/yswin32encoding.cpp"),
+        File("../../ysce_public/src/ysport/src/windows/yswin32fileinfo.cpp"),
+    ]
+else:
+    filtered_sources += [
+        File("../../ysce_public/src/ysport/src/linux/ysunixfileio.cpp"),
+        File("../../ysce_public/src/ysport/src/linux/ysunixspecialpath.cpp"),
+        File("../../ysce_public/src/ysport/src/linux/ysunixlocale.cpp"),
+        File("../../ysce_public/src/ysport/src/linux/ysunixencoding.cpp"),
+        File("../../ysce_public/src/ysport/src/linux/ysunixfileinfo.cpp"),
+    ]
 
 exclude_files = [
-    "ysgltess.cpp", "ysscenerygl.cpp", "ysscenerygl2.0.cpp", "yssceneryd3d.cpp",
+    "ysgltess.cpp", "ysscenerygl.cpp", "ysscenerygl2.0.cpp", "yssceneryd3d.cpp", "yssync_module.cpp", "yswin32bitmap.cpp",
     "fsgl.cpp", "fswin32.cpp", "fsx11.cpp",
-    "fsguifiledialog_linux.cpp", "fsguifiledialog_mac_cpp.cpp", "fsguifiledialog_nodialog.cpp",
-    "fsguiclipboard.cpp"
+    "fsguifiledialog_mac_cpp.cpp", "fsguifiledialog_nodialog.cpp",
+    "fsguiclipboard.cpp", "test.cpp",
 ]
+if env["platform"] == "windows":
+    exclude_files.append("fsguifiledialog_linux.cpp")
+else:
+    exclude_files.append("fsguifiledialog_win.cpp")
 
 for src in sources:
     filename = str(src).replace("\\", "/").split("/")[-1]
     if filename not in exclude_files:
         filtered_sources.append(src)
 
-if env["platform"] == "windows":
-    library = env.SharedLibrary(
-        "bin/ysflight_godot{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
-        source=filtered_sources,
-    )
-else:
-    library = env.SharedLibrary(
-        "bin/ysflight_godot{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
-        source=filtered_sources,
-    )
+library = env.SharedLibrary(
+    "bin/ysflight_godot{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+    source=filtered_sources,
+)
 
 env.NoCache(library)
 env.AddPostAction(library, Copy("../../godot_project/bin", library[0]))

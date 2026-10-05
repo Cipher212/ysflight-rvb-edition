@@ -4,3 +4,4 @@ compatibility_minimum=4.1
 
 [libraries]
 windows.debug.x86_64 = "res://bin/ysflight_godot.windows.template_debug.x86_64.dll"
+linux.debug.x86_64 = "res://bin/libysflight_godot.linux.template_debug.x86_64.so"
