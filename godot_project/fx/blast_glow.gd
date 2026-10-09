@@ -44,6 +44,12 @@ func add(pos: Vector3, size: float) -> void:
 	_age[slot] = 0.0
 	visible = true
 
+# The render origin moved by delta (main.gd): blast positions are render space.
+func rebase(delta: Vector3) -> void:
+	for i in MAX_BLASTS:
+		var b := _blasts[i]
+		_blasts[i] = Vector4(b.x - delta.x, b.y - delta.y, b.z - delta.z, b.w)
+
 func update(delta: float) -> void:
 	if not visible:
 		return

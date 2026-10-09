@@ -25,6 +25,8 @@ var _last_usec: int = 0
 func setup(p_main: Node) -> void:
 	main = p_main
 	sim = main.ysflight_sim
+	sim.debug_set_route_seed(0) # Mission loading randomises this independently of srand.
+	sim.render_origin_shifted.connect(_rebase_motion)
 	process_priority = 10 # after main.gd: may move the camera it placed
 	process_physics_priority = 50
 	var dt := Time.get_datetime_dict_from_system()
@@ -49,6 +51,10 @@ var _motion_frames: int = 0
 var _motion_prev := Vector3.ZERO
 var _motion_errors := PackedFloat32Array()
 
+func _rebase_motion(delta: Vector3) -> void:
+	if _motion_prev != Vector3.ZERO:
+		_motion_prev -= delta # the render origin moved (render space)
+
 func _sample_motion(delta: float) -> void:
 	var pos: Vector3 = sim.get_player_transform().origin
 	var speed: float = float(sim.get_player_telemetry().get("speed_ms", 0.0))
@@ -69,6 +75,7 @@ func _run() -> void:
 	await _seconds(2.0)
 	await _test_startup()
 	await _test_motion()
+	_test_render_origin()
 	await _test_throttle()
 	await _test_burner_showcase()
 	await _test_gear()
@@ -80,7 +87,8 @@ func _run() -> void:
 	_test_audio()
 	await _test_shoot_down_and_respawn()
 	await _test_ground_impact()
-	_test_frame_time()
+	if DisplayServer.get_name() != "headless":
+		_test_frame_time()
 	_finish()
 
 func _test_startup() -> void:
@@ -100,6 +108,20 @@ func _test_motion() -> void:
 	mean /= maxi(_motion_errors.size(), 1)
 	_check("motion interpolation smooth", _motion_errors.size() > 100 and mean < 0.05,
 		"mean error %.1f%% over %d frames" % [mean * 100.0, _motion_errors.size()])
+
+# Floating render origin (C++ core/render_origin.h): the camera stays near it, and render-space positions
+# convert back to real (absolute) values - altitude, and the terrain query under the jet.
+func _test_render_origin() -> void:
+	var origin: Vector3 = sim.get_render_origin()
+	var cam_dist: float = main.camera.global_position.length()
+	_check("render origin follows the camera", cam_dist < 1500.0, "camera %.0f m from the origin (absolute origin %s)" % [cam_dist, origin])
+	var tel: Dictionary = sim.get_player_telemetry()
+	var p: Vector3 = sim.get_player_transform().origin
+	var asl: float = p.y + origin.y
+	var ground: float = sim.get_terrain_height(p.x, p.z)
+	var ok := absf(asl - float(tel.get("altitude_m", 0.0))) < 5.0 and absf(asl - float(tel.get("agl_m", 0.0)) - ground) < 5.0
+	_check("render space converts back to absolute", ok, "altitude %.1f m (sim %.1f), ground under the jet %.1f m (sim %.1f)" % [
+		asl, float(tel.get("altitude_m", 0.0)), ground, asl - float(tel.get("agl_m", 0.0))])
 
 func _test_throttle() -> void:
 	main.controls.current_throttle = 0.2
@@ -159,7 +181,7 @@ func _test_burner_showcase() -> void:
 	main.camera_rig.cam_distance = 18.0
 	if hud_layer != null:
 		hud_layer.visible = true
-	_check("burner showcase captured", true, "5 angles")
+	_check("burner showcase exercised" if DisplayServer.get_name() == "headless" else "burner showcase captured", true, "5 angles")
 
 func _test_gear() -> void:
 	var before: float = float(sim.get_player_telemetry().get("gear", 0.0))
@@ -192,15 +214,45 @@ func _test_missile() -> void:
 	var count_key: String = {WPN_AIM9: "aim9_count", WPN_AIM9X: "aim9x_count", WPN_AIM120: "aim120_count"}.get(picked, "aim9_count")
 	var before: int = int(sim.get_player_telemetry().get(count_key, 0))
 	var trails0: int = sim.get_effects_stats()[1]
+	var old_life := {}
+	for weapon: Dictionary in sim.get_active_weapons():
+		old_life[weapon["slot_id"]] = weapon["life_remain"]
 	_inject["fire_once"] = true
-	await _seconds(0.5)
+	var missile_ribbon := false
+	# Other jets' smoke can expire as ours starts. Check the new missile's ribbon
+	# endpoints in the renderer, rather than requiring a rise in the whole-scene total.
+	for frame in 30:
+		await get_tree().process_frame
+		missile_ribbon = missile_ribbon or _new_missile_ribbon(picked, old_life)
 	var after: int = int(sim.get_player_telemetry().get(count_key, 0))
 	var trails1: int = sim.get_effects_stats()[1]
 	await _seconds(1.0)
 	await _shot("03_missile_trail")
 	_check("missile fired", after < before, "%s %d -> %d" % [count_key, before, after])
-	_check("missile smoke trail started", trails1 > trails0, "%d -> %d trails" % [trails0, trails1])
+	_check("missile smoke trail started", missile_ribbon, "new missile ribbon %s; scene %d -> %d trails" % [missile_ribbon, trails0, trails1])
 	sim.select_weapon(WPN_GUN)
+
+func _new_missile_ribbon(picked: int, old_life: Dictionary) -> bool:
+	var ribbons := sim.get_node("EffectsRoot/Trails") as MultiMeshInstance3D
+	if ribbons == null or ribbons.multimesh == null:
+		return false
+	var mesh: MultiMesh = ribbons.multimesh
+	var player: Vector3 = sim.get_player_transform().origin
+	for weapon: Dictionary in sim.get_active_weapons():
+		var pos: Vector3 = weapon["pos"]
+		# The bridge records its own ribbons; YS's legacy trail allocation flag
+		# does not describe these rendered segments.
+		if int(weapon["type"]) != picked or pos.distance_to(player) > 500.0:
+			continue
+		var slot: int = int(weapon["slot_id"])
+		if old_life.has(slot) and float(weapon["life_remain"]) <= float(old_life[slot]) + 1.0:
+			continue
+		for segment in mesh.visible_instance_count:
+			# trail_renderer.cpp stores its two ribbon endpoints in basis X/Y.
+			var data: Transform3D = mesh.get_instance_transform(segment)
+			if minf(data.basis.x.distance_to(pos), data.basis.y.distance_to(pos)) < 40.0:
+				return true
+	return false
 
 func _test_vapour() -> void:
 	# Hard pull at speed: YS reports vapour, the renderer draws two wingtip lines
@@ -232,24 +284,61 @@ func _test_radar() -> void:
 	_check("radar range steps", steps == [2.5, 5.0, 10.0, 15.0, 20.0] and not seen.values().has(false), str(steps))
 
 func _test_hud() -> void:
+	# Verify the helmet's cinematic toggle independently of an aircraft's physical HUD.
+	var physical_hud: Control = main.glass_hud
+	main.glass_hud = null
+	if physical_hud != null: physical_hud.visible = false
+	var saved_hide_hud: bool = bool(main.controls.get_value("hide_hud", false))
+	main.controls._values["hide_hud"] = false
+	main.hud._on_setting_changed("hide_hud")
 	main.camera_rig.set_mode(1)
 	await _seconds(1.0)
 	await _shot("05_cockpit_hud")
 	_check("HUD gets the cockpit view", main.hud.cam_mode == 1 and main.hud.is_visible_in_tree(), "")
+	var radar_visible: bool = main.radar_scope.visible
+	var mfd_visible: bool = main.cockpit_mfd.visible
+	main.controls._values["hide_hud"] = true
+	main.hud._on_setting_changed("hide_hud")
+	await _shot("05b_hidden_hud")
+	_check("Hide HUD leaves radar and cockpit screens independent", not main.hud.is_visible_in_tree() and main.radar_scope.visible == radar_visible and main.cockpit_mfd.visible == mfd_visible, "")
+	main.controls._values["hide_hud"] = false
+	main.hud._on_setting_changed("hide_hud")
 	# Head under G, fed fixed G values (the live dogfight can't guarantee a G load): +9 G -> 25 mm down,
 	# -3 G -> 10 mm up (clamped), and a view change resets it
 	var rig: Node = main.camera_rig
+	var saved_fov: float = float(main.controls.get_value("cockpit_fov", 65.0))
+	main.controls._values["cockpit_fov"] = 55.0
+	main.controls.changed.emit("cockpit_fov")
+	var fov_live: bool = is_equal_approx(rig.camera.fov, 55.0)
+	rig.cockpit_fov = 35.0 # temporary zoom must recenter to the saved base, not a hardcoded 65
+	rig.recenter_views()
+	var fov_recentered: bool = is_equal_approx(rig.cockpit_fov, 55.0)
+	rig.set_mode(2)
+	rig.set_mode(1, true)
+	_check("cockpit FOV setting applies live and survives view resets", fov_live and fov_recentered and is_equal_approx(rig.cockpit_fov, 55.0), "55 degrees")
+	main.controls._values["cockpit_fov"] = saved_fov
+	main.controls.changed.emit("cockpit_fov")
+	# Exercise the feature regardless of the player's saved preference; never save test settings.
+	var saved_head_movement: bool = bool(main.controls.get_value("cockpit_head_movement", true))
+	main.controls._values["cockpit_head_movement"] = true
 	for i in 120:
 		rig._update_head(1.0 / 60.0, 9.0)
 	var drop_9g: float = rig._head_drop
 	for i in 120:
 		rig._update_head(1.0 / 60.0, -3.0)
 	var rise_neg: float = rig._head_drop
+	main.controls._values["cockpit_head_movement"] = false
+	rig._update_head(1.0 / 60.0, 9.0)
+	var disabled_drop: float = rig._head_drop
+	main.controls._values["cockpit_head_movement"] = saved_head_movement
 	main.camera_rig.set_mode(2)
 	await _seconds(0.5)
-	_check("head moves under G (cockpit only)", absf(drop_9g + 0.025) < 0.001 and absf(rise_neg - 0.010) < 0.001 and rig._head_drop == 0.0,
+	_check("head moves under G (cockpit only)", absf(drop_9g + 0.025) < 0.001 and absf(rise_neg - 0.010) < 0.001 and disabled_drop == 0.0 and rig._head_drop == 0.0,
 		"%.1f mm at 9 G, %+.1f mm at -3 G, 0 after leaving F1" % [drop_9g * 1000.0, rise_neg * 1000.0])
 	_check("G overlay hidden outside the cockpit", not main.gforce._rect.visible, "")
+	main.controls._values["hide_hud"] = saved_hide_hud
+	main.hud._on_setting_changed("hide_hud")
+	main.glass_hud = physical_hud
 
 func _test_audio() -> void:
 	var n := 0
@@ -334,13 +423,19 @@ func _test_frame_time() -> void:
 
 # ------------------------------------------------------------------------------
 func _check(name: String, ok: bool, detail: String) -> void:
-	_results.append({"name": name, "ok": ok, "detail": detail})
+	var player: Dictionary = sim.get_player_telemetry()
+	_results.append({"name": name, "ok": ok, "detail": detail,
+		"player_alive": bool(player.get("is_alive", false)), "speed_ms": float(player.get("speed_ms", 0.0)),
+		"health_pct": float(player.get("health_pct", -1.0))})
 	print("[TEST] %s %s %s" % ["PASS" if ok else "FAIL", name, ("(" + detail + ")") if detail != "" else ""])
 
 func _seconds(s: float) -> void:
 	await get_tree().create_timer(s).timeout
 
 func _shot(name: String) -> void:
+	# A headless functional run has no rendered frame or screenshot evidence.
+	if DisplayServer.get_name() == "headless":
+		return
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	if img != null:

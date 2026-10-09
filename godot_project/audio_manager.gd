@@ -43,10 +43,13 @@ const BURNER_FADE_OUT_TIME: float = 0.5
 
 const SoundLibrary := preload("res://audio/sound_library.gd")
 const AudioBuses := preload("res://audio/audio_buses.gd")
+const CameraViewAudioFade := preload("res://audio/camera_view_audio_fade.gd")
 
 var _sounds: SoundLibrary = null
 var _buses: AudioBuses = null
+var _view_fade: CameraViewAudioFade = null
 var _sim: Object = null
+var _interior: bool = false
 
 # Engine voice structure
 class EngineVoice:
@@ -111,7 +114,9 @@ func setup(sim: Object) -> void:
 	_sim = sim
 	_buses = AudioBuses.new()
 	_sounds = SoundLibrary.new()
+	_view_fade = CameraViewAudioFade.new()
 	_setup_engine_voices()
+	_view_fade.setup(_sounds, _player_engine_voice, false)
 	_setup_gun_voices()
 	_setup_oneshots()
 	_setup_cockpit_players()
@@ -123,9 +128,18 @@ func setup(sim: Object) -> void:
 	if is_bench:
 		AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Master"), -80.0)
 
+# The render origin moved by delta (main.gd): one-shots keep playing where they started, and the camera
+# history is moved too, so the listener does not get a false Doppler jump.
+func rebase(delta: Vector3) -> void:
+	for p in _oneshot_players:
+		p.global_position -= delta
+	_prev_cam_pos -= delta
+
 func update(delta: float, camera: Camera3D, interior: bool, telemetry: Dictionary) -> void:
 	if _sim == null or camera == null:
 		return
+
+	_interior = interior
 
 	# Bus routing & filtering
 	_buses.update(delta, interior)
@@ -196,7 +210,7 @@ func _create_engine_voice(bus_name: StringName, is_player: bool) -> EngineVoice:
 	v.engine_player.unit_size = ENGINE_UNIT_SIZE
 	v.engine_player.max_distance = ENGINE_MAX_DISTANCE
 	v.engine_player.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
-	v.engine_player.stream = _sounds.engine0
+	v.engine_player.stream = _sounds.jet_external
 	add_child(v.engine_player)
 
 	v.burner_player = AudioStreamPlayer3D.new()
@@ -205,7 +219,7 @@ func _create_engine_voice(bus_name: StringName, is_player: bool) -> EngineVoice:
 	v.burner_player.unit_size = ENGINE_UNIT_SIZE
 	v.burner_player.max_distance = ENGINE_MAX_DISTANCE
 	v.burner_player.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED
-	v.burner_player.stream = _sounds.burner
+	v.burner_player.stream = _sounds.jet_external
 	add_child(v.burner_player)
 
 	return v
@@ -365,6 +379,8 @@ func _update_engine_voice(
 	if v.assigned_key == -1:
 		if v.engine_player.playing: v.engine_player.stop()
 		if v.burner_player.playing: v.burner_player.stop()
+		if v.is_player and _view_fade != null:
+			_view_fade.reset_stopped(_sounds, v, _interior)
 		return
 
 	if not _ac_key_to_row.has(v.assigned_key):
@@ -373,6 +389,8 @@ func _update_engine_voice(
 		v.fade_weight = 0.0
 		if v.engine_player.playing: v.engine_player.stop()
 		if v.burner_player.playing: v.burner_player.stop()
+		if v.is_player and _view_fade != null:
+			_view_fade.reset_stopped(_sounds, v, _interior)
 		return
 
 	var row: int = _ac_key_to_row[v.assigned_key]
@@ -435,26 +453,39 @@ func _update_engine_voice(
 			if v.engine_player.playing: v.engine_player.play()
 		if v.burner_player.playing:
 			v.burner_player.stop()
+		if v.is_player and _view_fade != null:
+			_view_fade.reset_for_prop(_interior)
 	else:
 		var jet_pitch: float = 1.0 + 0.0625 * clamp(power * 10.0, 0.0, 9.0)
 		v.engine_player.pitch_scale = jet_pitch * v.doppler_factor
 		v.burner_player.pitch_scale = 1.0 * v.doppler_factor
-		if v.engine_player.stream != _sounds.engine0:
-			v.engine_player.stream = _sounds.engine0
-			if v.engine_player.playing: v.engine_player.play()
+		if v.is_player:
+			if _view_fade != null:
+				_view_fade.update(delta, _sounds, v, _interior)
+		else:
+			if v.engine_player.stream != _sounds.jet_external:
+				v.engine_player.stream = _sounds.jet_external
+				if v.engine_player.playing: v.engine_player.play()
+			if v.burner_player.stream != _sounds.jet_external:
+				v.burner_player.stream = _sounds.jet_external
+				if v.burner_player.playing: v.burner_player.play()
 
 	# Volumes
 	if v.is_player:
-		var eng_linear := db_to_linear(-6.0) * (1.0 - v.burner_factor)
-		var brn_linear := db_to_linear(-4.0) * v.burner_factor
-		if eng_linear > 0.0001:
-			v.engine_player.volume_db = linear_to_db(eng_linear)
+		var base_eng_linear := db_to_linear(-6.0) * (1.0 - v.burner_factor)
+		var base_brn_linear := db_to_linear(-4.0) * v.burner_factor if engine_kind != 2 else 0.0
+		var fg := _view_fade.fade_gain if (engine_kind != 2 and _view_fade != null) else 1.0
+		var eng_linear := base_eng_linear * fg
+		var brn_linear := base_brn_linear * fg
+
+		if base_eng_linear > 0.0001:
+			v.engine_player.volume_db = linear_to_db(maxf(eng_linear, 0.00001))
 			if not v.engine_player.playing: v.engine_player.play()
 		else:
 			if v.engine_player.playing: v.engine_player.stop()
 
-		if brn_linear > 0.0001:
-			v.burner_player.volume_db = linear_to_db(brn_linear)
+		if base_brn_linear > 0.0001:
+			v.burner_player.volume_db = linear_to_db(maxf(brn_linear, 0.00001))
 			if not v.burner_player.playing: v.burner_player.play()
 		else:
 			if v.burner_player.playing: v.burner_player.stop()

@@ -32,6 +32,7 @@ var shards_spawned: int = 0
 var _fire_mm := MultiMesh.new()
 var _shard_mm := MultiMesh.new()
 var _shard_mat := ShaderMaterial.new()
+var _shard_mmi: MultiMeshInstance3D = null # at -render_origin: shards are absolute (fx/puff_system.gd)
 var _shard_head: int = 0
 var _time: float = 0.0
 var _burning: Dictionary = {} # aircraft key -> fireball seed
@@ -60,7 +61,11 @@ func _ready() -> void:
 	var dead := Transform3D(Basis(Vector3.ZERO, Vector3(1.0, 0.1, -1000.0), Vector3.ZERO), Vector3.ZERO)
 	for i in MAX_SHARDS:
 		_shard_mm.set_instance_transform(i, dead)
-	_add_instance_node("Shards", _shard_mm)
+	_shard_mmi = _add_instance_node("Shards", _shard_mm)
+
+# At setup and whenever the render origin moves (main.gd).
+func set_render_origin(origin: Vector3) -> void:
+	_shard_mmi.position = -origin
 
 func update(delta: float, aircraft: PackedFloat32Array) -> void:
 	_time += delta
@@ -99,7 +104,7 @@ func _spawn_shards(pos: Vector3, vel: Vector3) -> void:
 		var data := Vector3(_rng.randf_range(SHARD_SIZE.x, SHARD_SIZE.y), _rng.randf_range(SHARD_LIFE.x, SHARD_LIFE.y), _time)
 		var v0 := vel + dir * _rng.randf_range(SHARD_KICK.x, SHARD_KICK.y)
 		var spin := axis * _rng.randf_range(SHARD_SPIN.x, SHARD_SPIN.y)
-		_shard_mm.set_instance_transform(_shard_head, Transform3D(Basis(v0, data, spin), pos + dir * 2.0))
+		_shard_mm.set_instance_transform(_shard_head, Transform3D(Basis(v0, data, spin), pos + dir * 2.0 - _shard_mmi.position))
 		var shade := _rng.randf_range(SHARD_SHADE.x, SHARD_SHADE.y)
 		_shard_mm.set_instance_color(_shard_head, Color(shade, shade, shade * 0.95))
 		_shard_head = (_shard_head + 1) % MAX_SHARDS
@@ -116,10 +121,11 @@ func _shard_mesh() -> ArrayMesh:
 	mesh.surface_set_material(0, _shard_mat)
 	return mesh
 
-func _add_instance_node(node_name: String, mm: MultiMesh) -> void:
+func _add_instance_node(node_name: String, mm: MultiMesh) -> MultiMeshInstance3D:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.name = node_name
 	mmi.multimesh = mm
 	mmi.custom_aabb = AABB(Vector3(-1e7, -1e7, -1e7), Vector3(2e7, 2e7, 2e7))
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
+	return mmi

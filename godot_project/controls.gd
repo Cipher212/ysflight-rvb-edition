@@ -29,6 +29,7 @@ var _binding_to_actions: Dictionary = {}
 # Active device tracking
 var _active_stick_device: String = "Keyboard"
 var _mouse_stick_enabled: bool = true
+var _mouse_drag_view_held: bool = false
 var _last_joy_device: int = 0
 var _last_joy_throttle_val: float = -999.0
 
@@ -66,7 +67,8 @@ func setup(p_main: Node, p_sim: YSFlightSimulation) -> void:
 	# Mouse = stick position: start centred so the jet doesn't spawn already rolling/pitching.
 	# Deferred because the window may not have its final size yet.
 	recenter_mouse.call_deferred()
-	get_tree().create_timer(0.3).timeout.connect(recenter_mouse)
+	if is_inside_tree() and get_tree() != null:
+		get_tree().create_timer(0.3).timeout.connect(recenter_mouse)
 
 func set_settings_panel(panel: CanvasLayer) -> void:
 	settings_panel = panel
@@ -267,6 +269,11 @@ func _input(event: InputEvent) -> void:
 	# Action bindings capture
 	var b_str: String = event_to_binding_string(event)
 	if b_str != "":
+		# When Click-Drag Mouse View is enabled, left-click is reserved for looking around, not weapon fire
+		if b_str == "mouse:1" and bool(get_value("mouse_click_drag_view", false)):
+			_mouse_drag_view_held = event.is_pressed()
+			return
+
 		if event.is_pressed():
 			if not event.is_echo():
 				_held_inputs[b_str] = true
@@ -324,11 +331,14 @@ func _on_action_pressed(action: String) -> void:
 
 	match action:
 		"view_cockpit":
-			if main != null:
-				main.camera_rig.set_mode(1, main.camera_rig.mode == 1)
+			if main != null and main.camera_rig != null:
+				main.camera_rig.press_cockpit_view()
 		"view_exterior":
-			if main != null:
-				main.camera_rig.set_mode(2, main.camera_rig.mode == 2)
+			if main != null and main.camera_rig != null:
+				main.camera_rig.press_exterior_view()
+		"padlock":
+			if main != null and main.camera_rig != null:
+				main.camera_rig.toggle_or_cycle_padlock()
 		"recenter_mouse_stick":
 			recenter_mouse()
 		"toggle_mouse_stick":
@@ -345,6 +355,16 @@ func _on_action_pressed(action: String) -> void:
 		"radar":
 			if ysflight_sim != null:
 				ysflight_sim.press_button("RADAR")
+		"radar_filter":
+			if main != null:
+				var rs = main.get("radar_scope")
+				if rs != null and rs.has_method("cycle_filter_mode"):
+					rs.cycle_filter_mode()
+		"radar_enlarge":
+			if main != null:
+				var rs = main.get("radar_scope")
+				if rs != null and rs.has_method("toggle_enlarge"):
+					rs.toggle_enlarge()
 		"bomb_bay":
 			if ysflight_sim != null:
 				ysflight_sim.press_button("BOMBBAYDOOR")
@@ -561,7 +581,7 @@ func _physics_process(delta: float) -> void:
 
 	match active_device:
 		"Mouse":
-			if _mouse_stick_enabled:
+			if _mouse_stick_enabled and not (bool(get_value("mouse_click_drag_view", false)) and _mouse_drag_view_held):
 				var vp: Viewport = get_viewport()
 				if vp != null:
 					var vp_rect: Rect2 = vp.get_visible_rect()

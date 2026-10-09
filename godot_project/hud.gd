@@ -50,6 +50,14 @@ func _ready() -> void:
 
 func setup(p_controls: Node) -> void:
 	controls = p_controls
+	controls.changed.connect(_on_setting_changed)
+	_on_setting_changed("hide_hud")
+
+func _on_setting_changed(key: String) -> void:
+	if key == "hide_hud" or key.is_empty():
+		visible = not bool(controls.get_value("hide_hud", false))
+		if visible:
+			queue_redraw()
 
 func update_hud(
 	delta: float,
@@ -79,18 +87,19 @@ func update_hud(
 	if _fuel_banner_timer > 0.0:
 		_fuel_banner_timer = maxf(0.0, _fuel_banner_timer - delta)
 
-	# Only the cockpit view draws anything; redraw once more after leaving it to clear the canvas
-	if cam_mode == 1 or _drew_last_frame:
+	# Cockpit view (1) and look-down view (9) draw HUD; redraw once more after leaving to clear canvas
+	var is_hud_view: bool = visible and (cam_mode == 1 or cam_mode == 9)
+	if is_hud_view or _drew_last_frame:
 		queue_redraw()
-	_drew_last_frame = cam_mode == 1
+	_drew_last_frame = is_hud_view
 
 func _draw() -> void:
 	if camera == null or telemetry.is_empty():
 		return
 	if not bool(telemetry.get("is_alive", true)):
 		return
-	# User rule: the HUD is a helmet display and only exists in the internal (cockpit, F1) view
-	if cam_mode != 1:
+	# User rule: the HUD is a helmet display and only exists in internal (cockpit, F1) and look-down views
+	if cam_mode != 1 and cam_mode != 9:
 		return
 
 	if _font == null:
@@ -124,60 +133,58 @@ func _draw() -> void:
 	var half_h: float = vp_size.y * 0.5
 	var vp_rect := Rect2(Vector2.ZERO, vp_size)
 
-	var is_cockpit: bool = (cam_mode == 1)
+	var is_cockpit: bool = (cam_mode == 1 or cam_mode == 9)
+
+	var player_pos: Vector3 = player_transform.origin
+	var player_vel: Vector3 = telemetry.get("velocity", Vector3.ZERO)
+	var cur_woc: int = int(telemetry.get("weapon_type", 0))
+
+	# Pre-resolve locked target for heading tape azimuth caret and weapon cues
+	var locked_air_key: int = int(telemetry.get("locked_air_target_key", -1))
+	var locked_gnd_key: int = int(telemetry.get("locked_ground_target_key", -1))
+	var locked_tgt: Dictionary = {}
+	if cur_woc == 2 and locked_gnd_key >= 0 and ground_transforms.has(locked_gnd_key):
+		locked_tgt = ground_transforms[locked_gnd_key]
+	elif locked_air_key >= 0 and airplane_transforms.has(locked_air_key):
+		locked_tgt = airplane_transforms[locked_air_key]
+
+	# Compute boresight screen position (aircraft nose -Z)
+	var b_sp: Vector2 = Vector2(half_w, half_h)
+	var has_boresight: bool = false
+	var nose_world: Vector3 = player_pos - player_transform.basis.z * 1000.0
+	if not camera.is_position_behind(nose_world):
+		b_sp = camera.unproject_position(nose_world)
+		has_boresight = true
+
+	# Compute Flight Path Marker (Velocity Vector) screen position
+	var fpm_sp: Vector2 = b_sp
+	var has_fpm: bool = false
+	if player_vel.length() >= 20.0:
+		var fpm_world: Vector3 = player_pos + player_vel.normalized() * 1000.0
+		if not camera.is_position_behind(fpm_world):
+			fpm_sp = camera.unproject_position(fpm_world)
+			has_fpm = true
 
 	# --------------------------------------------------------------------------
-	# 1. Top Centre: Bank Arc & Heading Tape
+	# 1. Top Centre: Linear Heading Tape with Target Azimuth Caret
 	# --------------------------------------------------------------------------
 	if is_cockpit:
-		var arc_ctr := Vector2(half_w, 280.0 * s)
-		var r_out: float = 210.0 * s
-		var r_in: float = 195.0 * s
-
-		draw_arc(arc_ctr, r_out, -PI * 0.5 - deg_to_rad(60.0), -PI * 0.5 + deg_to_rad(60.0), 32, base_col, line_w)
-		draw_arc(arc_ctr, r_in, -PI * 0.5 - deg_to_rad(60.0), -PI * 0.5 + deg_to_rad(60.0), 32, base_col, line_w)
-
-		# Ticks at 0, 10, 20, 30, 45, 60
-		for tick_deg in BANK_TICKS:
-			var rad: float = -PI * 0.5 + deg_to_rad(tick_deg)
-			var dir := Vector2(cos(rad), sin(rad))
-			draw_line(arc_ctr + dir * r_in, arc_ctr + dir * r_out, base_col, line_w)
-
-		# Hollow triangle at 0 deg (top inner arc)
-		var tri_top := arc_ctr + Vector2(0.0, -r_in)
-		var tri_bl := arc_ctr + Vector2(-5.0 * s, -r_in + 8.0 * s)
-		var tri_br := arc_ctr + Vector2(5.0 * s, -r_in + 8.0 * s)
-		draw_line(tri_top, tri_bl, base_col, line_w)
-		draw_line(tri_bl, tri_br, base_col, line_w)
-		draw_line(tri_br, tri_top, base_col, line_w)
-
-		# Filled triangle pointer showing current bank
-		var bank_deg: float = clampf(float(telemetry.get("bank_deg", 0.0)), -60.0, 60.0)
-		var ptr_rad: float = -PI * 0.5 + deg_to_rad(bank_deg)
-		var ptr_dir := Vector2(cos(ptr_rad), sin(ptr_rad))
-		var ptr_perp := Vector2(-ptr_dir.y, ptr_dir.x)
-		var p_tip := arc_ctr + ptr_dir * r_out
-		var p_b1 := arc_ctr + ptr_dir * (r_out + 12.0 * s) + ptr_perp * (6.0 * s)
-		var p_b2 := arc_ctr + ptr_dir * (r_out + 12.0 * s) - ptr_perp * (6.0 * s)
-		draw_colored_polygon(PackedVector2Array([p_tip, p_b1, p_b2]), base_col)
-
-	# Heading Tape (visible in cockpit)
-	if is_cockpit:
-		var hdg_y: float = 145.0 * s
-		var tape_half_w: float = 160.0 * s
+		var hdg_y: float = 58.0 * s
+		var tape_half_w: float = 140.0 * s
 		draw_line(Vector2(half_w - tape_half_w, hdg_y), Vector2(half_w + tape_half_w, hdg_y), base_col, line_w)
-		# Centre caret pointing up
-		draw_line(Vector2(half_w - 5.0 * s, hdg_y + 8.0 * s), Vector2(half_w, hdg_y), base_col, line_w)
-		draw_line(Vector2(half_w + 5.0 * s, hdg_y + 8.0 * s), Vector2(half_w, hdg_y), base_col, line_w)
 
-		# Small numeric readout box above caret
+		# Center aircraft heading caret pointing up (^)
+		draw_line(Vector2(half_w - 4.0 * s, hdg_y + 7.0 * s), Vector2(half_w, hdg_y), base_col, line_w)
+		draw_line(Vector2(half_w + 4.0 * s, hdg_y + 7.0 * s), Vector2(half_w, hdg_y), base_col, line_w)
+
+		# Boxed numeric heading readout above caret
 		var cur_hdg: float = fmod(float(telemetry.get("heading_deg", 0.0)), 360.0)
 		if cur_hdg < 0.0: cur_hdg += 360.0
 		var cur_hdg_int: int = int(round(cur_hdg)) % 360
-		var hdg_box_w: float = 38.0 * s
-		var hdg_box_h: float = 18.0 * s
-		draw_rect(Rect2(half_w - hdg_box_w * 0.5, hdg_y - 28.0 * s, hdg_box_w, hdg_box_h), base_col, false, line_w)
-		draw_string(_font, Vector2(half_w - hdg_box_w * 0.5, hdg_y - 14.0 * s), "%03d" % cur_hdg_int, HORIZONTAL_ALIGNMENT_CENTER, hdg_box_w, maxi(8, font_sz - 2), base_col)
+		var hdg_box_w: float = 34.0 * s
+		var hdg_box_h: float = 16.0 * s
+		draw_rect(Rect2(half_w - hdg_box_w * 0.5, hdg_y - 24.0 * s, hdg_box_w, hdg_box_h), base_col, false, line_w)
+		draw_string(_font, Vector2(half_w - hdg_box_w * 0.5, hdg_y - 12.0 * s), "%03d" % cur_hdg_int, HORIZONTAL_ALIGNMENT_CENTER, hdg_box_w, maxi(8, font_sz - 2), base_col)
 
 		# Ticks every 5 deg, labels every 10 deg (YS style: heading/10)
 		var px_per_hdg_deg: float = (tape_half_w * 2.0) / 50.0
@@ -189,19 +196,33 @@ func _draw() -> void:
 				continue
 			var tx: float = half_w + diff * px_per_hdg_deg
 			var is_10: bool = (h_tick % 10 == 0)
-			var t_len: float = (10.0 if is_10 else 5.0) * s
+			var t_len: float = (8.0 if is_10 else 4.0) * s
 			draw_line(Vector2(tx, hdg_y), Vector2(tx, hdg_y - t_len), base_col, line_w)
 			if is_10:
 				var norm_h: int = (h_tick % 360 + 360) % 360
 				var ys_val: int = norm_h / 10
 				if ys_val == 0:
 					ys_val = 36
-				if absf(tx - half_w) < 34.0 * s:
+				if absf(tx - half_w) < 28.0 * s:
 					continue # hidden under the boxed heading readout
-				draw_string(_font, Vector2(tx - 15.0 * s, hdg_y - 12.0 * s), "%02d" % ys_val, HORIZONTAL_ALIGNMENT_CENTER, 30.0 * s, maxi(8, font_sz - 3), base_col)
+				draw_string(_font, Vector2(tx - 12.0 * s, hdg_y - 10.0 * s), "%02d" % ys_val, HORIZONTAL_ALIGNMENT_CENTER, 24.0 * s, maxi(8, font_sz - 3), base_col)
+
+		# Target Azimuth Caret (v) sliding along heading tape
+		if locked_tgt.size() > 0 and bool(locked_tgt.get("is_alive", true)):
+			var tgt_p: Vector3 = locked_tgt.get("pos", Vector3.ZERO)
+			var local_tgt: Vector3 = player_transform.affine_inverse() * tgt_p
+			var bearing_rad: float = atan2(local_tgt.x, -local_tgt.z)
+			var rel_deg: float = rad_to_deg(bearing_rad)
+			var caret_x: float = half_w + rel_deg * px_per_hdg_deg
+			var clamped_x: float = clampf(caret_x, half_w - tape_half_w, half_w + tape_half_w)
+			# Downward caret 'v'
+			draw_line(Vector2(clamped_x - 4.0 * s, hdg_y - 6.0 * s), Vector2(clamped_x, hdg_y), base_col, line_w)
+			draw_line(Vector2(clamped_x + 4.0 * s, hdg_y - 6.0 * s), Vector2(clamped_x, hdg_y), base_col, line_w)
+			draw_line(Vector2(clamped_x - 4.0 * s, hdg_y - 6.0 * s), Vector2(clamped_x + 4.0 * s, hdg_y - 6.0 * s), base_col, line_w)
+			draw_string(_font, Vector2(clamped_x - 8.0 * s, hdg_y - 8.0 * s), "T", HORIZONTAL_ALIGNMENT_CENTER, 16.0 * s, maxi(7, font_sz - 4), base_col)
 
 	# --------------------------------------------------------------------------
-	# 2. Centre: Pitch Ladder (CONFORMAL to the real horizon)
+	# 2. Centre: Pitch Ladder (Conformal to horizon, laterally aligned with FPM)
 	# --------------------------------------------------------------------------
 	if is_cockpit:
 		var cam_fwd: Vector3 = -camera.global_transform.basis.z
@@ -218,6 +239,11 @@ func _draw() -> void:
 		var tan_half_fov: float = tan(deg_to_rad(camera.fov * 0.5))
 		var focal_len: float = half_h / tan_half_fov
 
+		# Laterally center the ladder on the Velocity Vector (FPM) with smooth clamping
+		var fpm_lat_off: float = (fpm_sp - Vector2(half_w, half_h)).dot(ladder_right) if has_fpm else 0.0
+		fpm_lat_off = clampf(fpm_lat_off, -80.0 * s, 80.0 * s)
+		var ladder_center: Vector2 = Vector2(half_w, half_h) + ladder_right * fpm_lat_off
+
 		var min_p: int = maxi(-90, int(floor((cam_pitch_deg - 25.0) / 5.0)) * 5)
 		var max_p: int = mini(90, int(ceil((cam_pitch_deg + 25.0) / 5.0)) * 5)
 
@@ -226,42 +252,44 @@ func _draw() -> void:
 			if absf(delta_p) > 25.0:
 				continue
 			var d_px: float = focal_len * tan(deg_to_rad(delta_p))
-			var rung_ctr: Vector2 = Vector2(half_w, half_h) + ladder_up * d_px
+			var rung_ctr: Vector2 = ladder_center + ladder_up * d_px
 
 			if p == 0:
 				# 0 deg horizon line: longer solid line with center gap
-				draw_line(rung_ctr - ladder_right * (140.0 * s), rung_ctr - ladder_right * (40.0 * s), base_col, line_w)
-				draw_line(rung_ctr + ladder_right * (40.0 * s), rung_ctr + ladder_right * (140.0 * s), base_col, line_w)
+				draw_line(rung_ctr - ladder_right * (120.0 * s), rung_ctr - ladder_right * (35.0 * s), base_col, line_w)
+				draw_line(rung_ctr + ladder_right * (35.0 * s), rung_ctr + ladder_right * (120.0 * s), base_col, line_w)
 			elif p > 0:
-				# Positive rungs: solid
+				# Positive rungs: solid, bent slightly downward toward horizon
+				var bend_v: Vector2 = -ladder_up * (3.0 * s)
 				if p % 10 == 0:
-					var p_in_l := rung_ctr - ladder_right * (38.0 * s)
-					var p_out_l := rung_ctr - ladder_right * (85.0 * s)
-					var p_in_r := rung_ctr + ladder_right * (38.0 * s)
-					var p_out_r := rung_ctr + ladder_right * (85.0 * s)
+					var p_in_l := rung_ctr - ladder_right * (34.0 * s)
+					var p_out_l := rung_ctr - ladder_right * (75.0 * s) + bend_v
+					var p_in_r := rung_ctr + ladder_right * (34.0 * s)
+					var p_out_r := rung_ctr + ladder_right * (75.0 * s) + bend_v
 					draw_line(p_out_l, p_in_l, base_col, line_w)
 					draw_line(p_in_r, p_out_r, base_col, line_w)
 					# Downward ticks pointing toward horizon (-ladder_up)
-					var tick_v := -ladder_up * (6.0 * s)
+					var tick_v := -ladder_up * (5.0 * s)
 					draw_line(p_in_l, p_in_l + tick_v, base_col, line_w)
 					draw_line(p_in_r, p_in_r + tick_v, base_col, line_w)
 					var lbl := "%d" % p
-					draw_string(_font, p_out_l - ladder_right * (18.0 * s) - ladder_up * (4.0 * s), lbl, HORIZONTAL_ALIGNMENT_CENTER, 24.0 * s, maxi(8, font_sz - 3), base_col)
-					draw_string(_font, p_out_r + ladder_right * (2.0 * s) - ladder_up * (4.0 * s), lbl, HORIZONTAL_ALIGNMENT_CENTER, 24.0 * s, maxi(8, font_sz - 3), base_col)
+					draw_string(_font, p_out_l - ladder_right * (16.0 * s) - ladder_up * (4.0 * s), lbl, HORIZONTAL_ALIGNMENT_CENTER, 22.0 * s, maxi(8, font_sz - 3), base_col)
+					draw_string(_font, p_out_r + ladder_right * (2.0 * s) - ladder_up * (4.0 * s), lbl, HORIZONTAL_ALIGNMENT_CENTER, 22.0 * s, maxi(8, font_sz - 3), base_col)
 				else:
-					var p_in_l := rung_ctr - ladder_right * (38.0 * s)
-					var p_out_l := rung_ctr - ladder_right * (60.0 * s)
-					var p_in_r := rung_ctr + ladder_right * (38.0 * s)
-					var p_out_r := rung_ctr + ladder_right * (60.0 * s)
+					var p_in_l := rung_ctr - ladder_right * (34.0 * s)
+					var p_out_l := rung_ctr - ladder_right * (54.0 * s) + bend_v
+					var p_in_r := rung_ctr + ladder_right * (34.0 * s)
+					var p_out_r := rung_ctr + ladder_right * (54.0 * s) + bend_v
 					draw_line(p_out_l, p_in_l, base_col, line_w)
 					draw_line(p_in_r, p_out_r, base_col, line_w)
 			else:
-				# Negative rungs: dashed
+				# Negative rungs: dashed, bent slightly upward toward horizon
+				var bend_v: Vector2 = ladder_up * (3.0 * s)
 				if p % 10 == 0:
-					var p_in_l := rung_ctr - ladder_right * (38.0 * s)
-					var p_out_l := rung_ctr - ladder_right * (85.0 * s)
-					var p_in_r := rung_ctr + ladder_right * (38.0 * s)
-					var p_out_r := rung_ctr + ladder_right * (85.0 * s)
+					var p_in_l := rung_ctr - ladder_right * (34.0 * s)
+					var p_out_l := rung_ctr - ladder_right * (75.0 * s) + bend_v
+					var p_in_r := rung_ctr + ladder_right * (34.0 * s)
+					var p_out_r := rung_ctr + ladder_right * (75.0 * s) + bend_v
 					# 3 dashes on left
 					var d_step_l: Vector2 = (p_in_l - p_out_l) / 5.0
 					draw_line(p_out_l, p_out_l + d_step_l, base_col, line_w)
@@ -273,17 +301,17 @@ func _draw() -> void:
 					draw_line(p_in_r + d_step_r * 2.0, p_in_r + d_step_r * 3.0, base_col, line_w)
 					draw_line(p_in_r + d_step_r * 4.0, p_out_r, base_col, line_w)
 					# Upward ticks pointing toward horizon (+ladder_up)
-					var tick_v := ladder_up * (6.0 * s)
+					var tick_v := ladder_up * (5.0 * s)
 					draw_line(p_in_l, p_in_l + tick_v, base_col, line_w)
 					draw_line(p_in_r, p_in_r + tick_v, base_col, line_w)
 					var lbl := "%d" % p
-					draw_string(_font, p_out_l - ladder_right * (22.0 * s) - ladder_up * (4.0 * s), lbl, HORIZONTAL_ALIGNMENT_CENTER, 28.0 * s, maxi(8, font_sz - 3), base_col)
-					draw_string(_font, p_out_r + ladder_right * (2.0 * s) - ladder_up * (4.0 * s), lbl, HORIZONTAL_ALIGNMENT_CENTER, 28.0 * s, maxi(8, font_sz - 3), base_col)
+					draw_string(_font, p_out_l - ladder_right * (18.0 * s) - ladder_up * (4.0 * s), lbl, HORIZONTAL_ALIGNMENT_CENTER, 24.0 * s, maxi(8, font_sz - 3), base_col)
+					draw_string(_font, p_out_r + ladder_right * (2.0 * s) - ladder_up * (4.0 * s), lbl, HORIZONTAL_ALIGNMENT_CENTER, 24.0 * s, maxi(8, font_sz - 3), base_col)
 				else:
-					var p_in_l := rung_ctr - ladder_right * (38.0 * s)
-					var p_out_l := rung_ctr - ladder_right * (60.0 * s)
-					var p_in_r := rung_ctr + ladder_right * (38.0 * s)
-					var p_out_r := rung_ctr + ladder_right * (60.0 * s)
+					var p_in_l := rung_ctr - ladder_right * (34.0 * s)
+					var p_out_l := rung_ctr - ladder_right * (54.0 * s) + bend_v
+					var p_in_r := rung_ctr + ladder_right * (34.0 * s)
+					var p_out_r := rung_ctr + ladder_right * (54.0 * s) + bend_v
 					var d_step_l: Vector2 = (p_in_l - p_out_l) / 3.0
 					draw_line(p_out_l, p_out_l + d_step_l, base_col, line_w)
 					draw_line(p_out_l + d_step_l * 2.0, p_in_l, base_col, line_w)
@@ -294,30 +322,33 @@ func _draw() -> void:
 	# --------------------------------------------------------------------------
 	# 3. Boresight / Gun Cross (Project aircraft nose -Z)
 	# --------------------------------------------------------------------------
-	if is_cockpit:
-		var nose_world: Vector3 = player_transform.origin - player_transform.basis.z * 1000.0
-		if not camera.is_position_behind(nose_world):
-			var b_sp := camera.unproject_position(nose_world)
-			draw_line(b_sp + Vector2(-12.0 * s, 0.0), b_sp + Vector2(-3.0 * s, 0.0), base_col, line_w)
-			draw_line(b_sp + Vector2(3.0 * s, 0.0), b_sp + Vector2(12.0 * s, 0.0), base_col, line_w)
-			draw_line(b_sp + Vector2(0.0, -12.0 * s), b_sp + Vector2(0.0, -3.0 * s), base_col, line_w)
-			draw_line(b_sp + Vector2(0.0, 3.0 * s), b_sp + Vector2(0.0, 12.0 * s), base_col, line_w)
-			draw_circle(b_sp, 1.5 * s, base_col)
+	if is_cockpit and has_boresight:
+		draw_line(b_sp + Vector2(-10.0 * s, 0.0), b_sp + Vector2(-3.0 * s, 0.0), base_col, line_w)
+		draw_line(b_sp + Vector2(3.0 * s, 0.0), b_sp + Vector2(10.0 * s, 0.0), base_col, line_w)
+		draw_line(b_sp + Vector2(0.0, -10.0 * s), b_sp + Vector2(0.0, -3.0 * s), base_col, line_w)
+		draw_line(b_sp + Vector2(0.0, 3.0 * s), b_sp + Vector2(0.0, 10.0 * s), base_col, line_w)
+		draw_circle(b_sp, 1.5 * s, base_col)
 
 	# --------------------------------------------------------------------------
 	# 4. Flight-Path Marker (Velocity Vector)
 	# --------------------------------------------------------------------------
-	if is_cockpit:
-		var vel: Vector3 = telemetry.get("velocity", Vector3.ZERO)
-		if vel.length() >= 20.0:
-			var fpm_world: Vector3 = player_transform.origin + vel.normalized() * 1000.0
-			if not camera.is_position_behind(fpm_world):
-				var f_sp := camera.unproject_position(fpm_world)
-				var f_r: float = 6.0 * s
-				draw_arc(f_sp, f_r, 0.0, TAU, 16, base_col, line_w)
-				draw_line(f_sp + Vector2(-f_r - 8.0 * s, 0.0), f_sp + Vector2(-f_r, 0.0), base_col, line_w)
-				draw_line(f_sp + Vector2(f_r, 0.0), f_sp + Vector2(f_r + 8.0 * s, 0.0), base_col, line_w)
-				draw_line(f_sp + Vector2(0.0, -f_r - 6.0 * s), f_sp + Vector2(0.0, -f_r), base_col, line_w)
+	if is_cockpit and has_fpm:
+		var f_r: float = 5.0 * s
+		draw_arc(fpm_sp, f_r, 0.0, TAU, 16, base_col, line_w)
+		draw_line(fpm_sp + Vector2(-f_r - 7.0 * s, 0.0), fpm_sp + Vector2(-f_r, 0.0), base_col, line_w)
+		draw_line(fpm_sp + Vector2(f_r, 0.0), fpm_sp + Vector2(f_r + 7.0 * s, 0.0), base_col, line_w)
+		draw_line(fpm_sp + Vector2(0.0, -f_r - 5.0 * s), fpm_sp + Vector2(0.0, -f_r), base_col, line_w)
+
+	# AIM-9 Unlocked Boresight Seeker Reticle (Dashed 4-degree circle)
+	var is_aim9: bool = (cur_woc == 1 or cur_woc == 10)
+	var is_aim120: bool = (cur_woc == 6)
+	if is_cockpit and is_aim9 and locked_tgt.size() == 0 and has_boresight:
+		var r_bore: float = 20.0 * s
+		for i in range(12):
+			if i % 2 == 0:
+				var a0: float = (float(i) / 12.0) * TAU
+				var a1: float = (float(i + 1) / 12.0) * TAU
+				draw_arc(b_sp, r_bore, a0, a1, 4, base_col, line_w)
 
 	# --------------------------------------------------------------------------
 	# 5. Airspeed Tape, Altitude Tape & Vertical Speed Scale
@@ -398,7 +429,6 @@ func _draw() -> void:
 	# 6. Top Left: Weapon List
 	# --------------------------------------------------------------------------
 	var wpn_lines: Array[String] = []
-	var cur_woc: int = int(telemetry.get("weapon_type", 0))
 
 	# GUN
 	var gun_ammo: int = int(telemetry.get("gun_ammo", 0))
@@ -560,19 +590,9 @@ func _draw() -> void:
 	# --------------------------------------------------------------------------
 	# 10. Targeting: Locked Target Box & Enemy Aircraft Corner Brackets
 	# --------------------------------------------------------------------------
-	var player_pos: Vector3 = player_transform.origin
-	var player_vel: Vector3 = telemetry.get("velocity", Vector3.ZERO)
 	var player_iff: int = int(telemetry.get("iff", 0))
-
 	var is_guided: bool = (cur_woc == 1 or cur_woc == 10 or cur_woc == 6 or cur_woc == 2)
-	var locked_air_key: int = int(telemetry.get("locked_air_target_key", -1))
-	var locked_gnd_key: int = int(telemetry.get("locked_ground_target_key", -1))
-
-	var locked_tgt: Dictionary = {}
-	if cur_woc == 2 and locked_gnd_key >= 0 and ground_transforms.has(locked_gnd_key):
-		locked_tgt = ground_transforms[locked_gnd_key]
-	elif locked_air_key >= 0 and airplane_transforms.has(locked_air_key):
-		locked_tgt = airplane_transforms[locked_air_key]
+	var is_gun: bool = (cur_woc == 0)
 
 	# Render Locked Target
 	if locked_tgt.size() > 0 and bool(locked_tgt.get("is_alive", true)):
@@ -586,35 +606,62 @@ func _draw() -> void:
 		var is_on_screen: bool = (not is_behind) and inner_rect.has_point(sp)
 
 		if is_on_screen:
-			# Box around target
-			var box_sz: float = 28.0 * s
+			# Flashing red lock cue for the target square
+			var flash_lock: bool = (int(Time.get_ticks_msec() * 0.008) % 2) == 0
+			var sq_col: Color = Color(1.0, 0.22, 0.22) if flash_lock else base_col
+
+			# Square box around the locked target (flashes red when locked)
+			var box_sz: float = 24.0 * s
 			var box_rect: Rect2 = Rect2(sp.x - box_sz * 0.5, sp.y - box_sz * 0.5, box_sz, box_sz)
-			draw_rect(box_rect, base_col, false, line_w)
+			draw_rect(box_rect, sq_col, false, line_w)
 
-			# Rotated diamond inside when locked with guided weapon
-			if is_guided:
-				var d_sz: float = 18.0 * s
-				var p_top := sp + Vector2(0.0, -d_sz)
-				var p_right := sp + Vector2(d_sz, 0.0)
-				var p_bottom := sp + Vector2(0.0, d_sz)
-				var p_left := sp + Vector2(-d_sz, 0.0)
-				draw_line(p_top, p_right, base_col, line_w)
-				draw_line(p_right, p_bottom, base_col, line_w)
-				draw_line(p_bottom, p_left, base_col, line_w)
-				draw_line(p_left, p_top, base_col, line_w)
+			if is_aim9:
+				# Keep the circle! AIM-9 Uncaged Seeker Circle tracking the locked target
+				var r_seek: float = 14.0 * s
+				draw_arc(sp, r_seek, 0.0, TAU, 24, base_col, line_w)
+				draw_circle(sp, 1.5 * s, base_col)
+				draw_line(sp + Vector2(0.0, -r_seek), sp + Vector2(0.0, -r_seek - 3.0 * s), base_col, line_w)
+				draw_line(sp + Vector2(0.0, r_seek), sp + Vector2(0.0, r_seek + 3.0 * s), base_col, line_w)
+				draw_line(sp + Vector2(-r_seek, 0.0), sp + Vector2(-r_seek - 3.0 * s, 0.0), base_col, line_w)
+				draw_line(sp + Vector2(r_seek, 0.0), sp + Vector2(r_seek + 3.0 * s, 0.0), base_col, line_w)
+				draw_string(_font, Vector2(sp.x + box_sz * 0.5 + 5.0 * s, sp.y + 4.0 * s), "%.1fkm" % dist_km, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz, base_col)
+			elif is_aim120:
+				# Radar lock diamond/circle inside the flashing square
+				var r_tgt: float = 12.0 * s
+				draw_arc(sp, r_tgt, 0.0, TAU, 20, base_col, line_w)
+				var d_sz: float = 8.0 * s
+				draw_line(sp + Vector2(0.0, -d_sz), sp + Vector2(d_sz, 0.0), base_col, line_w)
+				draw_line(sp + Vector2(d_sz, 0.0), sp + Vector2(0.0, d_sz), base_col, line_w)
+				draw_line(sp + Vector2(0.0, d_sz), sp + Vector2(-d_sz, 0.0), base_col, line_w)
+				draw_line(sp + Vector2(-d_sz, 0.0), sp + Vector2(0.0, -d_sz), base_col, line_w)
 
-			# Range and closure rate along line of sight
-			var tgt_vel: Vector3 = locked_tgt.get("velocity", Vector3.ZERO)
-			var los: Vector3 = (tgt_pos - player_pos).normalized()
-			var closure_ms: float = (player_vel - tgt_vel).dot(los)
-			var closure_kt: int = int(round(closure_ms * 1.94384))
-			var tgt_info: String = "%.1fkm %+dkt" % [dist_km, closure_kt]
-			draw_string(_font, Vector2(sp.x + box_sz * 0.5 + 6.0 * s, sp.y + 4.0 * s), tgt_info, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz, base_col)
+				# Real Range and Closure Rate (Vc)
+				var tgt_vel: Vector3 = locked_tgt.get("velocity", Vector3.ZERO)
+				var los: Vector3 = (tgt_pos - player_pos).normalized()
+				var closure_ms: float = (player_vel - tgt_vel).dot(los)
+				var closure_kt: int = int(round(closure_ms * 1.94384))
+				draw_string(_font, Vector2(sp.x + box_sz * 0.5 + 5.0 * s, sp.y - 1.0 * s), "%.1fkm" % dist_km, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz, base_col)
+				draw_string(_font, Vector2(sp.x + box_sz * 0.5 + 5.0 * s, sp.y + 13.0 * s), "VC:%+d" % closure_kt, HORIZONTAL_ALIGNMENT_LEFT, -1, maxi(8, font_sz - 2), base_col)
+			elif is_gun:
+				# Gun Tracking: Circle inside the flashing square + range in meters
+				var r_tgt: float = 12.0 * s
+				draw_arc(sp, r_tgt, 0.0, TAU, 20, base_col, line_w)
+				draw_string(_font, Vector2(sp.x + box_sz * 0.5 + 5.0 * s, sp.y + 4.0 * s), "%dm" % int(dist_m), HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz, base_col)
+			else:
+				# Default guided weapon box (AGM, etc.) with inner lock circle
+				var r_tgt: float = 12.0 * s
+				draw_arc(sp, r_tgt, 0.0, TAU, 20, base_col, line_w)
+				draw_string(_font, Vector2(sp.x + box_sz * 0.5 + 5.0 * s, sp.y + 4.0 * s), "%.1fkm" % dist_km, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz, base_col)
 		else:
-			# Off-screen arrow at screen edge
-			_draw_offscreen_arrow(camera, tgt_pos, dist_km, vp_rect, base_col, s, line_w, font_sz)
+			# Off-screen clamped target box with directional arrow at screen edge (flashes red when locked)
+			var flash_lock: bool = (int(Time.get_ticks_msec() * 0.008) % 2) == 0
+			var off_col: Color = Color(1.0, 0.22, 0.22) if flash_lock else base_col
+			_draw_offscreen_arrow(camera, tgt_pos, dist_km, vp_rect, off_col, s, line_w, font_sz, is_guided)
 
-	# Render other alive enemy aircraft within 8 km (corner brackets only)
+	# Render other alive enemy aircraft:
+	# - Within 8 km: regular corner brackets
+	# - When AIM-120 selected (BVR mode, up to 40 km): BVR target boxes
+	var max_detect_m: float = 40000.0 if is_aim120 else 8000.0
 	for air_key in airplane_transforms.keys():
 		if int(air_key) == locked_air_key:
 			continue
@@ -626,40 +673,122 @@ func _draw() -> void:
 
 		var t_pos: Vector3 = st.get("pos", Vector3.ZERO)
 		var d_m: float = player_pos.distance_to(t_pos)
-		if d_m > 8000.0 or camera.is_position_behind(t_pos):
+		if d_m > max_detect_m or camera.is_position_behind(t_pos):
 			continue
 
 		var o_sp: Vector2 = camera.unproject_position(t_pos)
 		if not vp_rect.has_point(o_sp):
 			continue
 
-		# Small corner brackets
-		var b_sz: float = 20.0 * s
-		var c_len: float = 6.0 * s
-		var x0: float = o_sp.x - b_sz * 0.5
-		var y0: float = o_sp.y - b_sz * 0.5
-		var x1: float = o_sp.x + b_sz * 0.5
-		var y1: float = o_sp.y + b_sz * 0.5
+		if d_m > 8000.0:
+			# BVR Target Box (Dashed / segmented square with range tag)
+			var bvr_sz: float = 22.0 * s
+			var bvr_x: float = o_sp.x - bvr_sz * 0.5
+			var bvr_y: float = o_sp.y - bvr_sz * 0.5
+			var seg_len: float = 5.0 * s
+			var bvr_col := Color(base_col.r, base_col.g, base_col.b, 0.75)
+			# Top & bottom dashed lines
+			draw_line(Vector2(bvr_x, bvr_y), Vector2(bvr_x + seg_len, bvr_y), bvr_col, line_w)
+			draw_line(Vector2(bvr_x + bvr_sz - seg_len, bvr_y), Vector2(bvr_x + bvr_sz, bvr_y), bvr_col, line_w)
+			draw_line(Vector2(bvr_x, bvr_y + bvr_sz), Vector2(bvr_x + seg_len, bvr_y + bvr_sz), bvr_col, line_w)
+			draw_line(Vector2(bvr_x + bvr_sz - seg_len, bvr_y + bvr_sz), Vector2(bvr_x + bvr_sz, bvr_y + bvr_sz), bvr_col, line_w)
+			# Left & right dashed lines
+			draw_line(Vector2(bvr_x, bvr_y), Vector2(bvr_x, bvr_y + seg_len), bvr_col, line_w)
+			draw_line(Vector2(bvr_x, bvr_y + bvr_sz - seg_len), Vector2(bvr_x, bvr_y + bvr_sz), bvr_col, line_w)
+			draw_line(Vector2(bvr_x + bvr_sz, bvr_y), Vector2(bvr_x + bvr_sz, bvr_y + seg_len), bvr_col, line_w)
+			draw_line(Vector2(bvr_x + bvr_sz, bvr_y + bvr_sz - seg_len), Vector2(bvr_x + bvr_sz, bvr_y + bvr_sz), bvr_col, line_w)
+			# BVR range tag
+			var bvr_tag: String = "%dKM" % int(round(d_m / 1000.0))
+			var tag_sz: int = maxi(8, int(round(10.0 * s)))
+			draw_string(_font, Vector2(bvr_x, bvr_y + bvr_sz + 11.0 * s), bvr_tag, HORIZONTAL_ALIGNMENT_CENTER, bvr_sz, tag_sz, bvr_col)
+		else:
+			# Small corner brackets (visual range)
+			var b_sz: float = 20.0 * s
+			var c_len: float = 6.0 * s
+			var x0: float = o_sp.x - b_sz * 0.5
+			var y0: float = o_sp.y - b_sz * 0.5
+			var x1: float = o_sp.x + b_sz * 0.5
+			var y1: float = o_sp.y + b_sz * 0.5
 
-		draw_line(Vector2(x0, y0 + c_len), Vector2(x0, y0), base_col, line_w)
-		draw_line(Vector2(x0, y0), Vector2(x0 + c_len, y0), base_col, line_w)
-		draw_line(Vector2(x1 - c_len, y0), Vector2(x1, y0), base_col, line_w)
-		draw_line(Vector2(x1, y0), Vector2(x1, y0 + c_len), base_col, line_w)
-		draw_line(Vector2(x0, y1 - c_len), Vector2(x0, y1), base_col, line_w)
-		draw_line(Vector2(x0, y1), Vector2(x0 + c_len, y1), base_col, line_w)
-		draw_line(Vector2(x1 - c_len, y1), Vector2(x1, y1), base_col, line_w)
-		draw_line(Vector2(x1, y1), Vector2(x1, y1 - c_len), base_col, line_w)
+			draw_line(Vector2(x0, y0 + c_len), Vector2(x0, y0), base_col, line_w)
+			draw_line(Vector2(x0, y0), Vector2(x0 + c_len, y0), base_col, line_w)
+			draw_line(Vector2(x1 - c_len, y0), Vector2(x1, y0), base_col, line_w)
+			draw_line(Vector2(x1, y0), Vector2(x1, y0 + c_len), base_col, line_w)
+			draw_line(Vector2(x0, y1 - c_len), Vector2(x0, y1), base_col, line_w)
+			draw_line(Vector2(x0, y1), Vector2(x0 + c_len, y1), base_col, line_w)
+			draw_line(Vector2(x1 - c_len, y1), Vector2(x1, y1), base_col, line_w)
+			draw_line(Vector2(x1, y1), Vector2(x1, y1 - c_len), base_col, line_w)
 
 	# --------------------------------------------------------------------------
-	# 11. Gun Pipper
+	# 11. Gun Pipper (Classic base YSFlight lead reticle)
 	# --------------------------------------------------------------------------
 	if cur_woc == 0 and bool(telemetry.get("has_gun_lead", false)):
 		var lead_pos: Vector3 = telemetry.get("gun_lead_pos", Vector3.ZERO)
 		if not camera.is_position_behind(lead_pos):
 			var lead_sp: Vector2 = camera.unproject_position(lead_pos)
 			if vp_rect.has_point(lead_sp):
-				draw_arc(lead_sp, 12.0 * s, 0.0, TAU, 16, base_col, line_w)
+				var r_lead: float = 14.0 * s
+				draw_arc(lead_sp, r_lead, 0.0, TAU, 24, base_col, line_w)
 				draw_circle(lead_sp, 2.0 * s, base_col)
+				# 4 Cardinal tick marks extending outward
+				draw_line(lead_sp + Vector2(0.0, -r_lead), lead_sp + Vector2(0.0, -r_lead - 4.0 * s), base_col, line_w)
+				draw_line(lead_sp + Vector2(0.0, r_lead), lead_sp + Vector2(0.0, r_lead + 4.0 * s), base_col, line_w)
+				draw_line(lead_sp + Vector2(-r_lead, 0.0), lead_sp + Vector2(-r_lead - 4.0 * s, 0.0), base_col, line_w)
+				draw_line(lead_sp + Vector2(r_lead, 0.0), lead_sp + Vector2(r_lead + 4.0 * s, 0.0), base_col, line_w)
+				# If within effective gun range (<= 1200m), show inner firing cue
+				var dist_gun_m: float = player_pos.distance_to(lead_pos)
+				if dist_gun_m <= 1200.0:
+					draw_arc(lead_sp, 6.0 * s, 0.0, TAU, 12, base_col, line_w)
+
+	# --------------------------------------------------------------------------
+	# 11b. Bombsight Pipper (YSCE Classic Ballistics)
+	# --------------------------------------------------------------------------
+	var wpn_name: String = str(telemetry.get("weapon_name", "")).to_upper()
+	var is_bomb: bool = (cur_woc in [3, 7, 9]) or wpn_name.begins_with("BOMB") or wpn_name.begins_with("B250") or wpn_name.begins_with("B500")
+	if is_bomb or cam_mode == 9:
+		var impact_pos := Vector3.ZERO
+		if telemetry.has("bomb_impact_pos"):
+			impact_pos = telemetry["bomb_impact_pos"]
+		else:
+			var vel: Vector3 = telemetry.get("velocity", Vector3.ZERO)
+			var p_pos: Vector3 = player_transform.origin
+			var agl: float = float(telemetry.get("agl_m", p_pos.y))
+			var a: float = 0.5 * 9.80665
+			var b: float = -vel.y
+			var c: float = -maxf(agl, 1.0)
+			var det: float = b * b - 4.0 * a * c
+			if det >= 0.0:
+				var t1: float = (-b + sqrt(det)) / (2.0 * a)
+				var t2: float = (-b - sqrt(det)) / (2.0 * a)
+				var t: float = t1 if t1 >= 0.0 else t2
+				if t >= 0.0:
+					var gnd_y: float = p_pos.y - agl
+					impact_pos = Vector3(p_pos.x + vel.x * t, gnd_y, p_pos.z + vel.z * t)
+		if impact_pos != Vector3.ZERO:
+			var blast_rad: float = float(telemetry.get("bomb_blast_radius", 45.0))
+			var in_range: bool = bool(telemetry.get("bomb_target_in_range", false))
+			if not in_range:
+				for g_k in ground_transforms.keys():
+					var gd: Dictionary = ground_transforms[g_k]
+					if bool(gd.get("is_alive", true)):
+						var gp: Vector3 = gd.get("pos", Vector3.ZERO)
+						if impact_pos.distance_to(gp) <= blast_rad:
+							in_range = true
+							break
+			var p_col: Color = Color(1.0, 0.22, 0.22) if in_range else base_col
+			if not camera.is_position_behind(impact_pos):
+				var sp: Vector2 = camera.unproject_position(impact_pos)
+				if vp_rect.has_point(sp):
+					var r_px: float = 24.0 * s
+					draw_arc(sp, r_px, 0.0, TAU, 24, p_col, line_w)
+					draw_circle(sp, 2.5 * s, p_col)
+					draw_line(sp - Vector2(r_px * 0.55, 0.0), sp + Vector2(r_px * 0.55, 0.0), p_col, line_w)
+					draw_line(sp - Vector2(0.0, r_px * 0.55), sp + Vector2(0.0, r_px * 0.55), p_col, line_w)
+					var bomb_font_sz: int = maxi(10, int(round(13.0 * s)))
+					draw_string(_font, sp + Vector2(r_px + 4.0 * s, bomb_font_sz * 0.35), "BOMB", HORIZONTAL_ALIGNMENT_LEFT, -1, bomb_font_sz, p_col)
+			else:
+				var dist_km: float = player_transform.origin.distance_to(impact_pos) / 1000.0
+				_draw_offscreen_arrow(camera, impact_pos, dist_km, vp_rect, p_col, s, line_w, maxi(9, int(round(11.0 * s))))
 
 	# --------------------------------------------------------------------------
 	# 12. Threat Warnings (Flashing 2 Hz under boresight)
@@ -681,7 +810,8 @@ func _draw_offscreen_arrow(
 	col: Color,
 	s: float,
 	line_w: float,
-	font_sz: int
+	font_sz: int,
+	is_guided: bool = false
 ) -> void:
 	var cam_tfm: Transform3D = cam.global_transform
 	var local_tgt: Vector3 = cam_tfm.affine_inverse() * tgt_pos
@@ -694,7 +824,7 @@ func _draw_offscreen_arrow(
 		dir_2d = dir_2d.normalized()
 
 	var center := vp_rect.size * 0.5
-	var edge_margin: float = 50.0 * s
+	var edge_margin: float = 55.0 * s
 	var bounds_half := (vp_rect.size * 0.5) - Vector2(edge_margin, edge_margin)
 
 	var t_x: float = absf(bounds_half.x / dir_2d.x) if absf(dir_2d.x) > 0.001 else 1e9
@@ -702,17 +832,33 @@ func _draw_offscreen_arrow(
 	var t_hit: float = minf(t_x, t_y)
 	var edge_pt: Vector2 = center + dir_2d * t_hit
 
-	var arr_sz: float = 12.0 * s
+	# 1. Clamped target box on the screen edge
+	var box_sz: float = 24.0 * s
+	var box_rect := Rect2(edge_pt.x - box_sz * 0.5, edge_pt.y - box_sz * 0.5, box_sz, box_sz)
+	draw_rect(box_rect, col, false, line_w)
+
+	# Lock diamond inside if guided weapon
+	if is_guided:
+		var d_sz: float = 7.0 * s
+		draw_line(edge_pt + Vector2(0.0, -d_sz), edge_pt + Vector2(d_sz, 0.0), col, line_w)
+		draw_line(edge_pt + Vector2(d_sz, 0.0), edge_pt + Vector2(0.0, d_sz), col, line_w)
+		draw_line(edge_pt + Vector2(0.0, d_sz), edge_pt + Vector2(-d_sz, 0.0), col, line_w)
+		draw_line(edge_pt + Vector2(-d_sz, 0.0), edge_pt + Vector2(0.0, -d_sz), col, line_w)
+
+	# 2. Attached directional pointer pointing towards the off-screen target
+	var arr_origin := edge_pt + dir_2d * (box_sz * 0.5 + 2.0 * s)
+	var arr_sz: float = 10.0 * s
 	var perp := Vector2(-dir_2d.y, dir_2d.x)
-	var tip := edge_pt + dir_2d * arr_sz
-	var base_l := edge_pt - dir_2d * (arr_sz * 0.5) + perp * (arr_sz * 0.6)
-	var base_r := edge_pt - dir_2d * (arr_sz * 0.5) - perp * (arr_sz * 0.6)
+	var tip := arr_origin + dir_2d * arr_sz
+	var base_l := arr_origin + perp * (arr_sz * 0.6)
+	var base_r := arr_origin - perp * (arr_sz * 0.6)
 
 	draw_line(tip, base_l, col, line_w)
 	draw_line(base_l, base_r, col, line_w)
 	draw_line(base_r, tip, col, line_w)
 
+	# 3. Distance readout placed neatly inward from the box
 	var txt := "%.1fkm" % dist_km
-	var txt_offset := -dir_2d * (arr_sz + 12.0 * s)
+	var txt_offset := -dir_2d * (box_sz * 0.5 + 13.0 * s)
 	var txt_pos := edge_pt + txt_offset - Vector2(30.0 * s, -4.0 * s)
 	draw_string(_font, txt_pos, txt, HORIZONTAL_ALIGNMENT_CENTER, 60.0 * s, font_sz, col)

@@ -20,6 +20,9 @@ var _shots: bool = false
 var _shot_pending: String = ""
 var _shot_n: int = 0
 var _done: bool = false
+var _completed_at: float = -1.0
+var _post_handoff_s: float = 0.0
+var _next_progress_s: float = 0.0
 
 var kill_at_sec: float = -1.0
 var kill_jet_idx: int = -1
@@ -32,6 +35,8 @@ var _initial_keys: Array[int] = []
 var _waiting_ready_at: float = -1.0
 
 func setup(p_main: Node, p_out_dir: String) -> void:
+	# Record after simulation priority 100, including physics catch-up ticks.
+	process_physics_priority = 101
 	main = p_main
 	sim = main.ysflight_sim
 	out_dir = ProjectSettings.globalize_path(p_out_dir)
@@ -40,6 +45,9 @@ func setup(p_main: Node, p_out_dir: String) -> void:
 	var li := args.find("--arrival-limit")
 	if li >= 0 and li + 1 < args.size():
 		limit_s = float(args[li + 1])
+	var hi := args.find("--arrival-post-handoff")
+	if hi >= 0 and hi + 1 < args.size():
+		_post_handoff_s = maxf(0.0, float(args[hi + 1]))
 	var ki := args.find("--kill-at-sec")
 	if ki >= 0 and ki + 1 < args.size():
 		kill_at_sec = float(args[ki + 1])
@@ -87,14 +95,32 @@ func _process(_delta: float) -> void:
 		_shot_n += 1
 		get_viewport().get_texture().get_image().save_png(out_dir.path_join("shot_%02d_%s.png" % [_shot_n, _shot_pending]))
 		_shot_pending = ""
+
+func _physics_process(_delta: float) -> void:
+	if _done or sim == null:
+		return
 	var rows: Array = sim.get_ai_arrival_state()
 	if rows.is_empty():
 		_finish(rows, 0.0)  # Nothing on the follower (wrong runway name, or the jets were removed)
 		return
 	var t: float = float(rows[0]["t"])
+	if t >= _next_progress_s:
+		_next_progress_s = t + 10.0
+		var progress := FileAccess.open(out_dir.path_join("progress.json"), FileAccess.WRITE)
+		progress.store_string(JSON.stringify({"sim_time": t, "aircraft": rows}))
+		progress.close()
 	if _initial_keys.is_empty():
 		for r in rows:
 			_initial_keys.append(int(r["search_key"]))
+	# A failed stress run should save its last telemetry immediately, not wait out the full timer.
+	var deliberate_death: bool = kill_at_sec >= 0.0 or kill_approach_holder or kill_approach_at_sec >= 0.0 or kill_first_waiting
+	if not deliberate_death:
+		var lost_jet: bool = rows.size() != _initial_keys.size()
+		for r in rows:
+			lost_jet = lost_jet or not bool(r.get("alive", false))
+		if lost_jet:
+			_finish(rows, t)
+			return
 	if not _killed:
 		if kill_at_sec >= 0.0 and t >= kill_at_sec and kill_jet_idx >= 0 and kill_jet_idx < rows.size():
 			_trigger_kill(rows[kill_jet_idx], t, rows)
@@ -152,10 +178,21 @@ func _process(_delta: float) -> void:
 				r.get("hold_state", "NONE"), r.get("radial_error", 0.0),
 				r.get("search_key", 0), r.get("line", ""), r.get("assigned_alt", 0.0), r.get("stack_level", 0),
 				r.get("clearance_approach", false), r.get("clearance_runway", false), r.get("terrain_clearance_agl", 0.0),
-				r.get("hold_center_x", 0.0), r.get("hold_center_z", 0.0), r.get("hold_radius", 0.0)])
+				r.get("hold_center_x", 0.0), r.get("hold_center_z", 0.0), r.get("hold_radius", 0.0),
+				r.get("plan", ""), r.get("fuel_kg", 0.0), r.get("bombs", 0),
+				r.get("report", {}).get("rearm_spot", ""), r.get("speed", 0.0),
+				r.get("aoa", 0.0), r.get("bank", 0.0), r.get("pitch", 0.0), r.get("g", 0.0), r.get("heading", 0.0),
+				r.get("yaw_rate", 0.0), r.get("rudder", 0.0), r.get("died_of", ""),
+				r.get("bombs250", 0), r.get("aam", 0), r.get("gun", 0), r.get("fuel_max_kg", 0.0), r.get("mass_kg", 0.0),
+				r.get("agm", 0), r.get("rockets", 0), r.get("occupied_slots", 0),
+				r.get("departure_clear_seconds", 0.0), r.get("touchdown_seconds", 0.0),
+				r.get("route_progress", 0.0), r.get("traffic_buffer_scale", 1.0), r.get("clearance_rearm", false)])
 		_trace.append([t, sample])
-	if all_finished or t >= limit_s:
+	if all_finished and _completed_at < 0.0:
+		_completed_at = t
+	if (all_finished and t >= _completed_at + _post_handoff_s) or t >= limit_s:
 		_finish(rows, t)
+
 
 func _finish(rows: Array, t: float) -> void:
 	_done = true
@@ -163,7 +200,10 @@ func _finish(rows: Array, t: float) -> void:
 	f.store_string(JSON.stringify({"columns": ["x", "y", "z", "phase", "ground_speed", "ground", "offpave", "holding",
 		"gear", "flap", "spoiler", "throttle", "brake", "alive", "hold_state", "radial_error",
 		"search_key", "line", "assigned_alt", "stack_level", "clearance_approach", "clearance_runway", "terrain_clearance_agl",
-		"hold_center_x", "hold_center_z", "hold_radius"], "samples": _trace}))
+		"hold_center_x", "hold_center_z", "hold_radius", "plan", "fuel_kg", "bombs", "rearm_spot", "airspeed",
+		"aoa", "bank", "pitch", "g", "heading", "yaw_rate", "rudder", "died_of",
+		"bombs250", "aam", "gun", "fuel_max_kg", "mass_kg", "agm", "rockets", "occupied_slots",
+		"departure_clear_seconds", "touchdown_seconds", "route_progress", "traffic_buffer_scale", "clearance_rearm"], "samples": _trace}))
 	f.close()
 	var res_dict := {
 		"sim_time": t,
@@ -177,4 +217,6 @@ func _finish(rows: Array, t: float) -> void:
 	f.store_string(JSON.stringify(res_dict, "  "))
 	f.close()
 	print("Arrival test done at t=%.0f s: %s" % [t, out_dir])
+	if main.benchmark != null:
+		main.benchmark._finish_benchmark() # Flush the complete recovery run before exiting.
 	get_tree().quit(0)

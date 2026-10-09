@@ -5,6 +5,10 @@ extends RefCounted
 # settings_panel.gd builds its rows from it. Binding strings: "key:<name>", "mouse:<button>",
 # "joy_button:<index>"; "slots": 3 allows a third binding.
 
+const COCKPIT_FOV_DEFAULT := 65.0
+const COCKPIT_FOV_MIN := 30.0
+const COCKPIT_FOV_MAX := 100.0
+
 const SETTINGS: Array[Dictionary] = [
 	# --- Stick Device ---
 	{
@@ -60,6 +64,13 @@ const SETTINGS: Array[Dictionary] = [
 		"section": "Mouse",
 		"type": "bool",
 		"default": true
+	},
+	{
+		"key": "mouse_click_drag_view",
+		"label": "Click-Drag Mouse View",
+		"section": "Mouse",
+		"type": "bool",
+		"default": false
 	},
 	{
 		"key": "show_stick_indicator",
@@ -286,15 +297,32 @@ const SETTINGS: Array[Dictionary] = [
 	},
 	{
 		"key": "resolution",
-		"label": "Resolution (Windowed)",
+		"label": "Window Size",
 		"section": "Display",
 		"type": "enum",
 		"default": "1920x1080",
 		"options": ["1280x720", "1366x768", "1600x900", "1920x1080", "2560x1440", "3840x2160"]
 	},
 	{
+		"key": "cockpit_fov",
+		"label": "Cockpit FOV (degrees)",
+		"section": "Display",
+		"type": "float",
+		"default": COCKPIT_FOV_DEFAULT,
+		"min": COCKPIT_FOV_MIN,
+		"max": COCKPIT_FOV_MAX,
+		"step": 1.0
+	},
+	{
 		"key": "cockpit_head_movement",
 		"label": "Head Moves Under G (Cockpit)",
+		"section": "Display",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "cockpit_mfd",
+		"label": "Working Cockpit Screens (F-16)",
 		"section": "Display",
 		"type": "bool",
 		"default": true
@@ -305,6 +333,16 @@ const SETTINGS: Array[Dictionary] = [
 		"section": "Display",
 		"type": "bool",
 		"default": false
+	},
+	{
+		"key": "ghost_cam_smoothing",
+		"label": "Ghost Cam Smoothing (F11, Spectator)",
+		"section": "Display",
+		"type": "float",
+		"default": 0.5,
+		"min": 0.0,
+		"max": 1.0,
+		"step": 0.05
 	},
 	{
 		"key": "show_input_overlay",
@@ -505,6 +543,20 @@ const SETTINGS: Array[Dictionary] = [
 
 	# --- HUD ---
 	{
+		"key": "cockpit_hud",
+		"label": "Cockpit HUD (F-16)",
+		"section": "HUD",
+		"type": "bool",
+		"default": true
+	},
+	{
+		"key": "hide_hud",
+		"label": "Hide HUD",
+		"section": "HUD",
+		"type": "bool",
+		"default": false
+	},
+	{
 		"key": "hud_color",
 		"label": "HUD Color",
 		"section": "HUD",
@@ -562,6 +614,14 @@ const SETTINGS: Array[Dictionary] = [
 		"type": "bool",
 		"default": true
 	},
+	{
+		"key": "radar_filter_mode",
+		"label": "Radar Target Filter",
+		"section": "Radar",
+		"type": "enum",
+		"default": "All",
+		"options": ["All", "Air Only", "Ground Only"]
+	},
 
 	# --- Bindings ---
 	{ "key": "pitch_up", "label": "Pitch Up", "section": "Bindings", "type": "binding", "default": "key:Down", "default2": "" },
@@ -593,6 +653,8 @@ const SETTINGS: Array[Dictionary] = [
 	{ "key": "cycle_weapon", "label": "Cycle Weapon", "section": "Bindings", "type": "binding", "default": "key:2", "default2": "mouse:3", "default3": "joy_button:3", "slots": 3 },
 	{ "key": "flare", "label": "Dispense Flare", "section": "Bindings", "type": "binding", "default": "key:4", "default2": "joy_button:1" },
 	{ "key": "radar", "label": "Toggle Radar", "section": "Bindings", "type": "binding", "default": "key:3", "default2": "" },
+	{ "key": "radar_filter", "label": "Filter Radar (Air/Ground/All)", "section": "Bindings", "type": "binding", "default": "key:BracketLeft", "default2": "" },
+	{ "key": "radar_enlarge", "label": "Enlarge Radar Scope", "section": "Bindings", "type": "binding", "default": "key:BracketRight", "default2": "" },
 	{ "key": "bomb_bay", "label": "Bomb Bay Door", "section": "Bindings", "type": "binding", "default": "key:1", "default2": "" },
 
 	{ "key": "select_gun", "label": "Select Gun", "section": "Bindings", "type": "binding", "default": "key:5", "default2": "" },
@@ -606,6 +668,7 @@ const SETTINGS: Array[Dictionary] = [
 
 	{ "key": "view_cockpit", "label": "Cockpit View", "section": "Bindings", "type": "binding", "default": "key:F1", "default2": "" },
 	{ "key": "view_exterior", "label": "Exterior View", "section": "Bindings", "type": "binding", "default": "key:F2", "default2": "joy_button:4" },
+	{ "key": "padlock", "label": "Padlock Nearest Bandit", "section": "Bindings", "type": "binding", "default": "key:F5", "default2": "joy_button:3", "default3": "key:Slash", "slots": 3 },
 
 	{ "key": "look_forward", "label": "Look Forward", "section": "Bindings", "type": "binding", "default": "key:U", "default2": "" },
 	{ "key": "look_left", "label": "Look Left", "section": "Bindings", "type": "binding", "default": "key:H", "default2": "" },

@@ -47,6 +47,12 @@ var _should_draw: bool = false
 var _radar_range: float = 10.0 * 1852.0 # metres
 var _radar_range_nm: float = 10.0
 
+enum FilterMode { ALL = 0, AIR_ONLY = 1, GROUND_ONLY = 2 }
+var filter_mode: int = FilterMode.ALL
+var _filter_initialized: bool = false
+var _enlarged: bool = false
+var _scale_anim: float = 1.0
+
 const NM_TO_M := 1852.0
 const DEFAULT_RANGE_NM := 10.0
 const SCOPE_SCALE := 1.2 # 2026-09-30 user: scope 20% bigger
@@ -61,6 +67,21 @@ func setup(p_controls: Node) -> void:
 	if controls != null and "ysflight_sim" in controls and controls.ysflight_sim != null:
 		ysflight_sim = controls.ysflight_sim
 
+func cycle_filter_mode() -> void:
+	filter_mode = (filter_mode + 1) % 3
+	if controls != null:
+		var mode_str := "All"
+		match filter_mode:
+			FilterMode.ALL: mode_str = "All"
+			FilterMode.AIR_ONLY: mode_str = "Air Only"
+			FilterMode.GROUND_ONLY: mode_str = "Ground Only"
+		controls.set_value("radar_filter_mode", mode_str)
+	queue_redraw()
+
+func toggle_enlarge() -> void:
+	_enlarged = not _enlarged
+	queue_redraw()
+
 func update_radar(
 	p_camera: Camera3D,
 	p_player_transform: Transform3D,
@@ -74,13 +95,31 @@ func update_radar(
 	airplane_transforms = p_air_tfms
 	cam_mode = p_cam_mode
 
-	# Drawn ONLY in cockpit view (cam_mode == 1) and when player is alive
+	# Drawn ONLY in cockpit/look-down view (cam_mode == 1 or 9) and when player is alive
 	var is_alive: bool = bool(telemetry.get("is_alive", true))
-	if cam_mode != 1 or not is_alive:
+	if not (cam_mode == 1 or cam_mode == 9) or not is_alive:
 		_should_draw = false
 		_radar_data.clear()
 		queue_redraw()
 		return
+
+	# Sync filter mode from settings if first run
+	if not _filter_initialized and controls != null:
+		_filter_initialized = true
+		var saved_filter: String = str(controls.get_value("radar_filter_mode", "All"))
+		match saved_filter:
+			"Air Only": filter_mode = FilterMode.AIR_ONLY
+			"Ground Only": filter_mode = FilterMode.GROUND_ONLY
+			_: filter_mode = FilterMode.ALL
+
+	# Animate smooth enlarge scale
+	var target_scale: float = 1.85 if _enlarged else 1.0
+	var dt: float = get_process_delta_time()
+	if dt <= 0.0:
+		dt = 0.016
+	_scale_anim = move_toward(_scale_anim, target_scale, dt * 6.0)
+	if not is_equal_approx(_scale_anim, target_scale):
+		queue_redraw()
 
 	# Resolve simulation node if not cached
 	if ysflight_sim == null:
@@ -146,8 +185,8 @@ func _draw() -> void:
 		_:
 			hud_col = Color(0.35, 1.0, 0.45)
 
-	# Overall UI scale factor: (vp_height / 1080) * radar_size * hud_scale
-	var s: float = (vp_size.y / 1080.0) * radar_size * hud_scale * SCOPE_SCALE
+	# Overall UI scale factor: (vp_height / 1080) * radar_size * hud_scale * SCOPE_SCALE * _scale_anim
+	var s: float = (vp_size.y / 1080.0) * radar_size * hud_scale * SCOPE_SCALE * _scale_anim
 	if s < 0.1:
 		s = 1.0
 
@@ -157,14 +196,79 @@ func _draw() -> void:
 	var player_iff: int = int(telemetry.get("iff", 0))
 
 	# --------------------------------------------------------------------------
-	# 1. Background Disc & Range Rings
+	# 1. Background Disc, Range Rings & Polar Callout Grid
 	# --------------------------------------------------------------------------
 	# Very faint dark disc behind scope (black, alpha 0.25) for readability
 	draw_circle(centre, radius, Color(0.0, 0.0, 0.0, 0.25))
 
-	# Outer ring (full radar range) and inner ring (half range)
+	# Polar Grid: 25% and 75% subtle intermediate range rings
+	var grid_col := Color(hud_col.r, hud_col.g, hud_col.b, 0.18)
+	draw_arc(centre, radius * 0.25, 0.0, TAU, 28, grid_col, line_w * 0.75)
+	draw_arc(centre, radius * 0.75, 0.0, TAU, 40, grid_col, line_w * 0.75)
+
+	# Polar Grid: Crosshair bearing lines (Forward, Aft, Left, Right)
+	draw_line(centre + Vector2(0.0, -radius * 0.12), centre + Vector2(0.0, -radius * 0.98), grid_col, line_w * 0.75)
+	draw_line(centre + Vector2(0.0, radius * 0.12), centre + Vector2(0.0, radius * 0.98), grid_col, line_w * 0.75)
+	draw_line(centre + Vector2(-radius * 0.12, 0.0), centre + Vector2(-radius * 0.98, 0.0), grid_col, line_w * 0.75)
+	draw_line(centre + Vector2(radius * 0.12, 0.0), centre + Vector2(radius * 0.98, 0.0), grid_col, line_w * 0.75)
+
+	# Polar Grid: 45-degree diagonal bearing ticks (045, 135, 225, 315)
+	var diag_v := Vector2(0.7071, 0.7071)
+	for d_sign in [Vector2(diag_v.x, diag_v.y), Vector2(-diag_v.x, diag_v.y), Vector2(diag_v.x, -diag_v.y), Vector2(-diag_v.x, -diag_v.y)]:
+		draw_line(centre + d_sign * (radius * 0.46), centre + d_sign * (radius * 0.54), grid_col, line_w * 0.75)
+		draw_line(centre + d_sign * (radius * 0.94), centre + d_sign * (radius * 0.98), grid_col, line_w * 0.75)
+
+	# Main Rings: Outer ring (full radar range) and inner ring (half range)
 	draw_arc(centre, radius, 0.0, TAU, 48, hud_col, line_w)
 	draw_arc(centre, radius * 0.5, 0.0, TAU, 36, hud_col, line_w)
+
+	# --------------------------------------------------------------------------
+	# 1b. Radar Gimbal Limit Cone (+/- 60 degrees forward)
+	# --------------------------------------------------------------------------
+	var cone_ang_rad: float = deg_to_rad(60.0)
+	var left_cone_dir := Vector2(cos(-PI * 0.5 - cone_ang_rad), sin(-PI * 0.5 - cone_ang_rad))
+	var right_cone_dir := Vector2(cos(-PI * 0.5 + cone_ang_rad), sin(-PI * 0.5 + cone_ang_rad))
+	var cone_line_col := Color(hud_col.r, hud_col.g, hud_col.b, 0.28)
+	draw_line(centre, centre + left_cone_dir * radius, cone_line_col, line_w * 0.8)
+	draw_line(centre, centre + right_cone_dir * radius, cone_line_col, line_w * 0.8)
+
+	var cone_poly := PackedVector2Array()
+	cone_poly.append(centre)
+	var poly_segments: int = 10
+	for p_idx in range(poly_segments + 1):
+		var frac: float = float(p_idx) / float(poly_segments)
+		var ang: float = (-PI * 0.5 - cone_ang_rad) + frac * (cone_ang_rad * 2.0)
+		cone_poly.append(centre + Vector2(cos(ang), sin(ang)) * radius)
+	draw_colored_polygon(cone_poly, Color(hud_col.r, hud_col.g, hud_col.b, 0.04))
+
+	# --------------------------------------------------------------------------
+	# 1c. Weapon Engagement Zone (WEZ) Ring
+	# --------------------------------------------------------------------------
+	var cur_woc: int = int(telemetry.get("weapon_type", 0))
+	var wez_range_m: float = 0.0
+	match cur_woc:
+		0: wez_range_m = 1500.0 # GUN
+		1, 10: wez_range_m = 6000.0 # AIM-9 / AIM-9X
+		6: wez_range_m = 35000.0 # AIM-120
+		2: wez_range_m = 12000.0 # AGM-65
+		4: wez_range_m = 3000.0 # ROCKET
+		3, 7, 9: wez_range_m = 2000.0 # BOMBS
+		_: wez_range_m = 0.0
+
+	if wez_range_m > 0.0:
+		var wez_ratio: float = wez_range_m / _radar_range
+		var wez_r: float = radius * wez_ratio
+		if wez_r < radius and wez_r > 8.0 * s:
+			var num_dashes: int = 16
+			var arc_step: float = TAU / float(num_dashes)
+			var dash_len: float = arc_step * 0.5
+			var wez_col := Color(hud_col.r, hud_col.g, hud_col.b, 0.55)
+			for d in range(num_dashes):
+				var start_a: float = float(d) * arc_step
+				draw_arc(centre, wez_r, start_a, start_a + dash_len, 4, wez_col, line_w)
+			var wez_tag_pos := centre + Vector2(wez_r + 3.0 * s, 3.0 * s)
+			var wez_font_sz: int = maxi(7, int(round(8.0 * s)))
+			draw_string(_font, wez_tag_pos, "WEZ", HORIZONTAL_ALIGNMENT_LEFT, -1, wez_font_sz, wez_col)
 
 	# --------------------------------------------------------------------------
 	# 2. Heading-Up North ("N") Indicator on Outer Rim
@@ -183,13 +287,23 @@ func _draw() -> void:
 	draw_string(_font, n_pos - Vector2(n_size.x * 0.5, -n_size.y * 0.35), "N", HORIZONTAL_ALIGNMENT_CENTER, -1, font_sz_n, hud_col)
 
 	# --------------------------------------------------------------------------
-	# 3. Radar Range Label (Lower-Left of Ring)
+	# 3. Radar Range & Filter Mode Label (Lower-Left of Ring)
 	# --------------------------------------------------------------------------
 	var range_text: String = ("%d NM" % int(_radar_range_nm)) if fmod(_radar_range_nm, 1.0) == 0.0 else ("%.1f NM" % _radar_range_nm)
+	var filter_text: String = "ALL"
+	match filter_mode:
+		FilterMode.AIR_ONLY: filter_text = "AIR"
+		FilterMode.GROUND_ONLY: filter_text = "GND"
+		_: filter_text = "ALL"
 
 	var font_sz_lbl: int = maxi(9, int(round(11.0 * s)))
 	var lbl_pos := centre + Vector2(-radius * 0.85, radius * 0.95)
 	draw_string(_font, lbl_pos, range_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz_lbl, hud_col)
+
+	var filter_col := hud_col
+	if filter_mode != FilterMode.ALL:
+		filter_col = Color(1.0, 0.75, 0.2) # Amber highlight when filtered
+	draw_string(_font, lbl_pos + Vector2(radius * 0.65, 0.0), filter_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_sz_lbl, filter_col)
 
 	# --------------------------------------------------------------------------
 	# 4. Player Aircraft Symbol at Scope Centre (Heading Up)
@@ -200,9 +314,10 @@ func _draw() -> void:
 	draw_circle(centre, 1.5 * s, hud_col)
 
 	# --------------------------------------------------------------------------
-	# 5. Ground Objects (if radar_show_ground enabled)
+	# 5. Ground Objects (if radar_show_ground enabled and filter includes ground)
 	# --------------------------------------------------------------------------
-	if show_ground and _radar_data.has("ground"):
+	var allow_ground: bool = (filter_mode == FilterMode.ALL or filter_mode == FilterMode.GROUND_ONLY)
+	if show_ground and allow_ground and _radar_data.has("ground"):
 		var ground: PackedFloat32Array = _radar_data.get("ground", PackedFloat32Array())
 		var g_count: int = ground.size()
 		var gi: int = 0
@@ -227,6 +342,10 @@ func _draw() -> void:
 			var g_col: Color = Color(1.0, 0.3, 0.25) if g_is_enemy else Color(0.25, 0.65, 0.8, 0.8)
 			var cur_sz: float = g_lock_sz if g_locked else g_sz
 
+			# Target Lock Tether to locked ground object
+			if g_locked:
+				draw_dashed_line(centre, g_blip, Color(hud_col.r, hud_col.g, hud_col.b, 0.65), line_w, 4.0 * s)
+
 			draw_rect(Rect2(g_blip.x - cur_sz * 0.5, g_blip.y - cur_sz * 0.5, cur_sz, cur_sz), g_col, false, line_w)
 
 	# --------------------------------------------------------------------------
@@ -249,8 +368,10 @@ func _draw() -> void:
 			var is_chasing: bool = (m_flags & 1) != 0
 			var is_player_fired: bool = (m_flags & 2) != 0
 
-			# Other missiles are not shown (declutter)
+			# Other missiles are not shown (declutter). Player fired hidden in ground-only filter.
 			if not is_chasing and not is_player_fired:
+				continue
+			if is_player_fired and filter_mode == FilterMode.GROUND_ONLY:
 				continue
 
 			var m_offset := Vector2(m_right, -m_fwd) * range_scale
@@ -272,9 +393,10 @@ func _draw() -> void:
 				draw_circle(m_pos, maxf(1.5, 2.0 * s), dim_col)
 
 	# --------------------------------------------------------------------------
-	# 7. Aircraft Contacts
+	# 7. Aircraft Contacts (if filter includes air)
 	# --------------------------------------------------------------------------
-	if _radar_data.has("contacts"):
+	var allow_air: bool = (filter_mode == FilterMode.ALL or filter_mode == FilterMode.AIR_ONLY)
+	if allow_air and _radar_data.has("contacts"):
 		var contacts: PackedFloat32Array = _radar_data.get("contacts", PackedFloat32Array())
 		var count: int = contacts.size()
 		var i: int = 0
@@ -298,7 +420,16 @@ func _draw() -> void:
 
 			var blip_pos := centre + blip_offset
 			var is_enemy: bool = (iff != player_iff)
-			var contact_col: Color = Color(1.0, 0.3, 0.25) if is_enemy else Color(0.35, 0.8, 1.0)
+
+			# Altitude decluttering: contacts > 2000m above or below player are dimmed (unless locked)
+			var abs_alt: float = absf(alt)
+			var is_far_alt: bool = (abs_alt > 2000.0) and not is_locked
+			var contact_alpha: float = 0.38 if is_far_alt else 1.0
+			var contact_col: Color = Color(1.0, 0.3, 0.25, contact_alpha) if is_enemy else Color(0.35, 0.8, 1.0, contact_alpha)
+
+			# Target Lock Tether: faint dashed line connecting player to locked target
+			if is_locked:
+				draw_dashed_line(centre, blip_pos, Color(hud_col.r, hud_col.g, hud_col.b, 0.65), line_w, 4.0 * s)
 
 			# Symbol: small directional chevron rotated by rel_heading
 			var heading_screen: float = -PI * 0.5 + rel_hdg
@@ -313,7 +444,6 @@ func _draw() -> void:
 			draw_colored_polygon(PackedVector2Array([tip, left_wing, center_notch, right_wing]), contact_col)
 
 			# Altitude cue: |alt| > 300 m draws "+" or "-", with km diff when > 1 km
-			var abs_alt: float = absf(alt)
 			if abs_alt > 300.0:
 				var sign_ch: String = "+" if alt > 0.0 else "-"
 				var alt_text: String = ""
@@ -331,7 +461,7 @@ func _draw() -> void:
 	# --------------------------------------------------------------------------
 	# 8. Threat Arrows (Off-screen / behind enemy aircraft within 10 km)
 	# --------------------------------------------------------------------------
-	if show_threat_arrows and camera != null and not airplane_transforms.is_empty():
+	if allow_air and show_threat_arrows and camera != null and not airplane_transforms.is_empty():
 		_draw_threat_arrows(vp_size, vp_rect, s, line_w, player_iff)
 
 func _draw_threat_arrows(

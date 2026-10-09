@@ -15,7 +15,7 @@ const HomeHud := preload("res://ui/home_hud.gd")
 const GAME_SCENE := "res://main.tscn"
 const BUILDER_SCENE := "res://ui/event_builder.tscn"
 const ONLINE_SCENE := "res://ui/online.tscn"
-const DIRECT_FLAGS := ["--run-tests", "--benchmark", "--ai-player", "--ai-soak", "--ai-arrival", "--mission"]
+const DIRECT_FLAGS := ["--run-tests", "--benchmark", "--ai-player", "--ai-soak", "--ai-arrival", "--mission", "--precision-probe"]
 
 const MENU_WIDTH := 620
 const BUTTON_HEIGHT := 62

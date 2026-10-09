@@ -4,9 +4,14 @@ extends Node3D
 # camera -> effects -> HUD / radar / G effects -> audio. The sim node itself runs first (process priority
 # -100: interpolation + model sync) and its physics tick runs after the controls (priority +100).
 # Command-line flags (after "--"): --benchmark, --ai-player, --no-interp, --mission <res path>,
-# --stock-ai (stock YS AI instead of the RvB tactical AI), --no-ai-respawn, --ai-ground-ops (archived RTB/taxi),
+# --stock-ai (stock YS AI instead of the RvB tactical AI), --no-ai-respawn, --ai-ground-ops (ground-start respawns),
 # --ai-soak <sim seconds> [--sim-speed N] (AI-only run that logs the AI, tests/ai_soak.gd),
 # --ai-arrival <RUNWAY> --arrival-out <dir> (arrival follower test, tests/ai_arrival_test.gd). Notes: logs/.
+# --ai-combat --combat-out <dir> [--combat-recovery] (rebuilt combat AI harness, tests/ai_combat_test.gd);
+# --ai-combat-human (the player flies against the AI); --ai-combat-legacy requires a checkpoint runtime.
+# Ordinary RvB missions always use the unified HIGH controller; --rebuilt-ai remains a launcher alias.
+# --precision-probe [--probe-out <dir>] (render precision far from the map centre, tests/precision_probe.gd),
+# --origin-threshold <m> (floating render origin re-centre distance; 0 = fixed origin, for A/B runs).
 
 const AudioManagerScript = preload("res://audio_manager.gd")
 const HUDScript = preload("res://hud.gd")
@@ -31,6 +36,8 @@ const PerfLogScript = preload("res://core/perf_log.gd")
 const TestRunnerScript = preload("res://tests/test_runner.gd")
 const AiSoakScript = preload("res://tests/ai_soak.gd")
 const AiArrivalTestScript = preload("res://tests/ai_arrival_test.gd")
+const AiCombatTestScript = preload("res://tests/ai_combat_test.gd")
+const PrecisionProbeScript = preload("res://tests/precision_probe.gd")
 const SkyEnvironmentScript = preload("res://world/sky_environment.gd")
 const DayCycleScript = preload("res://world/day_cycle.gd")
 const AppState = preload("res://core/app_state.gd")
@@ -44,6 +51,7 @@ const SpawnMenuScript = preload("res://ui/spawn_menu.gd")
 const SunGlareScript = preload("res://fx/sun_glare.gd")
 const BlastGlowScript = preload("res://fx/blast_glow.gd")
 const LowCloudLayerScript = preload("res://world/low_cloud_layer.gd")
+const CockpitMFDScript = preload("res://ui/cockpit/cockpit_mfd.gd")
 
 const MISSION := "res://mission/luavi_16v16.yfs"
 const BENCHMARK_SEED := 12345
@@ -65,12 +73,14 @@ var benchmark: Node = null
 var benchmark_mode := false
 var ai_player_mode := false # --ai-player: the YS dogfight AI flies the player jet (spectating)
 var test_mode := false      # --run-tests: tests/test_runner.gd plays through the mission and quits
-var arrival_test_mode := false # --ai-arrival: tests/ai_arrival_test.gd (no player respawn)
+var arrival_test_mode := false # --ai-arrival / --ai-combat test harnesses (no player respawn)
 var event_mode := false     # offline RvB event (core/app_state.gd, set by the menus)
 var free_flight_mode := false # Home > FREE FLIGHT: the map with no other aircraft
 var event_session: Node = null
 var day_cycle: Node = null
 var low_cloud_layer: Node3D = null
+var cockpit_mfd: Node3D = null
+var glass_hud: Control = null
 
 var _puffs: Node3D = null
 var _explosions: Node3D = null
@@ -90,8 +100,15 @@ func _ready() -> void:
 	test_mode = "--run-tests" in args
 	var soak_i := args.find("--ai-soak")
 	var arrival_i := args.find("--ai-arrival")
-	arrival_test_mode = arrival_i >= 0
-	ai_player_mode = benchmark_mode or soak_i >= 0 or arrival_i >= 0 or "--ai-player" in args
+	if "--ai-combat-legacy" in args:
+		push_error("Legacy RvB controller removed; use a checkpoint build for comparisons.")
+		get_tree().quit(2)
+		return
+	var combat_human := "--ai-combat-human" in args # the player flies against the AI (owner's fight tests)
+	var combat_test := "--ai-combat" in args or combat_human # combat AI harness (tests/ai_combat_test.gd)
+	var probe_test := "--precision-probe" in args
+	arrival_test_mode = arrival_i >= 0 or combat_test
+	ai_player_mode = benchmark_mode or soak_i >= 0 or arrival_i >= 0 or (combat_test and not combat_human) or probe_test or "--ai-player" in args
 	event_mode = AppState.mode == "event" and not (benchmark_mode or test_mode or ai_player_mode)
 	free_flight_mode = AppState.mode == "free_flight" and not (benchmark_mode or test_mode or ai_player_mode)
 
@@ -101,8 +118,13 @@ func _ready() -> void:
 	ysflight_sim.initialize_simulation()
 	ysflight_sim.set_rvb_ai_enabled(not "--stock-ai" in args)
 	ysflight_sim.set_ai_respawn_enabled(not "--no-ai-respawn" in args)
-	ysflight_sim.set_ai_ground_ops("--ai-ground-ops" in args) # archived: RTB / landing / taxi / refuel
-	if benchmark_mode or test_mode:
+	ysflight_sim.set_ai_ground_ops("--ai-ground-ops" in args) # ground-start respawns; recovery has one controller
+	# YSFlight RvB Edition, 2026-10-08: ordinary missions use the single RvB controller at HIGH.
+	# Combat fixtures retain their explicit preset/recovery choices for comparable evidence.
+	ysflight_sim.set_ai_recovery_all_roles("--combat-recovery" in args or not combat_test or "--rebuilt-ai" in args)
+	if not combat_test or "--rebuilt-ai" in args:
+		ysflight_sim.debug_set_combat_preset("HIGH")
+	if benchmark_mode or test_mode or combat_test:
 		ysflight_sim.set_random_seed(BENCHMARK_SEED)
 	var mission := MISSION
 	var mi := args.find("--mission")
@@ -119,6 +141,9 @@ func _ready() -> void:
 	ysflight_sim.load_yfs(mission)
 	if "--no-interp" in args:
 		ysflight_sim.set_interpolation_enabled(false) # A/B test: show the latest physics tick, no blending
+	var origin_i := args.find("--origin-threshold")
+	if origin_i >= 0 and origin_i + 1 < args.size():
+		ysflight_sim.set_render_origin_threshold(float(args[origin_i + 1]))
 	if arrival_i >= 0 and arrival_i + 1 < args.size():
 		ysflight_sim.start_ai_arrival(args[arrival_i + 1]) # every aircraft, the player's too
 	elif ai_player_mode:
@@ -188,6 +213,18 @@ func _ready() -> void:
 	radar_scope.name = "RadarScope"
 	hud_layer.add_child(radar_scope)
 	radar_scope.setup(controls)
+	if "--f16-glass-hud" in args:
+		DisplayServer.window_set_title("YSFlight | F-16 Glass HUD Test")
+	if not "--no-f16-glass-hud" in args:
+		glass_hud = load("res://ui/cockpit/f16_glass_hud.gd").new()
+		glass_hud.name = "F16GlassHUD"
+		hud_layer.add_child(glass_hud)
+		glass_hud.setup(controls)
+	if not "--no-cockpit-mfd" in args:
+		cockpit_mfd = CockpitMFDScript.new()
+		cockpit_mfd.name = "CockpitMFD"
+		add_child(cockpit_mfd)
+		cockpit_mfd.setup(controls, camera, ysflight_sim.get_player_telemetry())
 	_debug_overlay = DebugOverlayScript.new()
 	_debug_overlay.controls = controls
 	hud_layer.add_child(_debug_overlay)
@@ -222,12 +259,15 @@ func _ready() -> void:
 	add_child(settings_panel)
 	settings_panel.setup(controls)
 
+	ysflight_sim.render_origin_shifted.connect(_on_render_origin_shifted)
+	_on_render_origin_shifted(Vector3.ZERO) # place the absolute-space effects for the starting origin
+
 	_perf_log = PerfLogScript.new(ysflight_sim)
 	var tel: Dictionary = ysflight_sim.get_player_telemetry()
 	ysflight_sim.log_to_crashlog("GDScript _ready() complete. Player %s, weapon %s, AIM-120 %d, AIM-9 %d" % [
 		tel.get("identifier", "?"), tel.get("weapon_name", "NONE"), int(tel.get("aim120_count", 0)), int(tel.get("aim9_count", 0))])
 	print("YSFlight Ready: [F1] Cockpit [F2] Exterior | [Space] Weapon [Ctrl/LMB] Gun [2] Cycle [4] Flare | [Tab] Afterburner [G] Gear | [Esc] Settings [F10] Flight setup")
-	camera_rig.set_mode(camera_rig.CamMode.HORIZON_CHASE)
+	camera_rig.set_mode(camera_rig.CamMode.COCKPIT if "--f16-glass-hud" in args else camera_rig.CamMode.HORIZON_CHASE)
 	camera_rig.update(0.016, ysflight_sim.get_player_transform(), tel, ysflight_sim.get_airplane_transforms())
 
 	if event_mode:
@@ -266,12 +306,25 @@ func _ready() -> void:
 		if sample_i >= 0 and sample_i + 1 < args.size():
 			soak.sample_s = float(args[sample_i + 1])
 		soak.setup(self, float(args[soak_i + 1]) if soak_i + 1 < args.size() else 600.0)
-	elif arrival_i >= 0:
+	# Recovery stress runs can collect frame timings alongside the arrival judge.
+	if arrival_i >= 0:
 		var arrival: Node = AiArrivalTestScript.new()
 		arrival.name = "AiArrivalTest"
 		add_child(arrival)
 		var out_i := args.find("--arrival-out")
 		arrival.setup(self, args[out_i + 1] if out_i >= 0 and out_i + 1 < args.size() else "user://arrival_test")
+	if combat_test:
+		var combat: Node = AiCombatTestScript.new()
+		combat.name = "AiCombatTest"
+		add_child(combat)
+		var cout_i := args.find("--combat-out")
+		combat.setup(self, args[cout_i + 1] if cout_i >= 0 and cout_i + 1 < args.size() else "user://combat_test")
+	if probe_test:
+		var probe: Node = PrecisionProbeScript.new()
+		probe.name = "PrecisionProbe"
+		add_child(probe)
+		var pout_i := args.find("--probe-out")
+		probe.setup(self, args[pout_i + 1] if pout_i >= 0 and pout_i + 1 < args.size() else "user://precision_probe")
 	Kit.hide_loading(get_tree()) # the menus' loading screen (ui/ui_kit.gd) stays up until the map is ready
 
 # Effects quality 0 low / 1 medium / 2 high (graphics_settings.gd, from "FX Density").
@@ -328,11 +381,34 @@ func _update_hud(delta: float, player_tfm: Transform3D, tel: Dictionary, airplan
 		var g: Dictionary = ysflight_sim.get_ground_transform(locked_gnd)
 		if not g.is_empty():
 			grounds[locked_gnd] = g
+	var glass_active := false
+	if glass_hud != null:
+		glass_active = glass_hud.update_display(camera, player_tfm, tel, airplanes, grounds,
+			camera_rig.is_cockpit() and camera_rig.is_at_player())
+	var helmet_visible := not bool(controls.get_value("hide_hud", false)) and not glass_active
+	if hud.visible != helmet_visible:
+		hud.visible = helmet_visible
 	hud.update_hud(delta, camera, player_tfm, camera_rig.mode, tel, airplanes, grounds)
 	radar_scope.update_radar(camera, player_tfm, tel, airplanes, camera_rig.mode)
+	if cockpit_mfd != null:
+		cockpit_mfd.update_display(delta, player_tfm, tel, camera_rig.is_cockpit() and camera_rig.is_at_player(), airplanes, grounds)
 	gforce.update_effect(delta, float(tel.get("g_force", 1.0)), bool(tel.get("is_alive", true)), ai_player_mode,
 		get_tree().paused, camera_rig.is_cockpit())
 	_debug_overlay.update(camera_rig.status_text, tel)
+
+# The sim moved the floating render origin (C++ core/render_origin.h) by delta, before anything else ran this
+# frame: subsystems that keep render-space positions move them; effects stored in absolute coordinates
+# re-place their node at -origin.
+func _on_render_origin_shifted(delta: Vector3) -> void:
+	var origin: Vector3 = ysflight_sim.get_render_origin()
+	camera_rig.rebase(delta)
+	audio_manager.rebase(delta)
+	_puffs.set_render_origin(origin)
+	_explosions.set_render_origin(origin, delta)
+	_death_fx.set_render_origin(origin)
+	_crashes.rebase(delta)
+	blast_glow.rebase(delta)
+	low_cloud_layer.set_render_origin(origin)
 
 func _add_sun() -> void:
 	# YSFlight-like sun without double lighting

@@ -1,12 +1,13 @@
 extends RefCounted
 
-# The game's sounds: stock YSFlight .wav files from res://sound/ (loops set up for engines, gun and
-# warnings) plus two synthesized cockpit tones (missile lock beep, over-G warning). Loaded once by
-# audio_manager.gd.
+# The game's sounds: approved CC0 jet engine loops (jet_cockpit.wav by minian89,
+# jet_external.wav by m_cel) and stock YSFlight .wav files from res://sound/
+# (propeller loop, gun and warnings) plus two synthesized cockpit tones
+# (missile lock beep, over-G warning). Loaded once by audio_manager.gd.
 
 # Sound streams loaded at startup
-var engine0: AudioStreamWAV = null
-var burner: AudioStreamWAV = null
+var jet_cockpit: AudioStreamWAV = null
+var jet_external: AudioStreamWAV = null
 var prop0: AudioStreamWAV = null
 var gun: AudioStreamWAV = null
 var warning: AudioStreamWAV = null
@@ -23,6 +24,10 @@ var retractldg: AudioStreamWAV = null
 var extendldg: AudioStreamWAV = null
 var damage: AudioStreamWAV = null
 var hit: AudioStreamWAV = null
+
+# Backward-compatibility alias for test_runner.gd (shares jet_external without duplicate load)
+var engine0: AudioStreamWAV:
+	get: return jet_external
 
 # Synthesized streams
 var lock_beep: AudioStreamWAV = null
@@ -47,8 +52,8 @@ func _load_sound(filename: String, is_loop: bool = false) -> AudioStreamWAV:
 	return stream
 
 func _load_all_sounds() -> void:
-	engine0 = _load_sound("engine0.wav", true)
-	burner = _load_sound("burner.wav", true)
+	jet_cockpit = _load_sound("jet_cockpit.wav", true)
+	jet_external = _load_sound("jet_external.wav", true)
 	prop0 = _load_sound("prop0.wav", true)
 	gun = _load_sound("gun.wav", true)
 	warning = _load_sound("warning.wav", true)

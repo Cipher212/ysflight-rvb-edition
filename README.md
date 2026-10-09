@@ -5,6 +5,15 @@ the RvB (Red vs Blue) community events. **This is a pre-alpha test build**: expe
 features. Right now you can set up and fly an offline RvB event against the AI on the Luavi map
 (up to 18 vs 18).
 
+**Latest update — 9 October 2026:**
+- Updated F-16 cockpit model, physical glass HUD and working MFD placement on the tilted instrument panel.
+- Unified combat AI with shared radar detections, threat assessment, revised ground-attack survival and recovery.
+- Close-combat turns use available aircraft lift up to a 10.9 G command, manoeuvre flaps and speed management.
+  Turning is tighter in scripted checks; overall combat effectiveness remains under playtesting.
+- Added HIGH guns, short-range and BVR 1v1 launchers (`Fight_AI_High_*.bat`) for testing against the AI.
+- Floating render origin for distant-flight precision, spectator camera updates and display/control improvements.
+- GitHub downloads contain the playable runtime and assets; development/build folders and private research are omitted.
+
 **New in v0.4.0:**
 - **Home Screen Atmosphere:** Procedural wireframe terrain flyby, authentic 2D vector jet passes, dogfights, afterburner trails, intro merge with sonic boom shockwave, and tactical HUD heading tape inspired by the RvB website.
 - **Dynamic Low-Poly Clouds:** Atmospheric cumulus cloud banks drifting across the sky between 3500–5400 ft with wind shear, distance fading, and active camera immersion fog.
@@ -103,6 +112,12 @@ Full key list: see [Controls](#controls-ysflight-defaults) below.
 - **`Spectate_AI`**: the computer flies your jet while you watch. **F1-F8** switch cameras, drag with
   the mouse to look around, mouse wheel to zoom. **F6** follows other aircraft: **Tab** or **[ ]** picks
   the next one.
+  - **F1** after picking an aircraft with **Tab** puts you in *its* cockpit (**Tab** / **[ ]** jump to the
+    next aircraft's cockpit, **F2** goes back to your own jet, **F6** back to orbiting it).
+  - **F11** is the free **ghost camera**: fly it like a plane with the mouse (or joystick / arrow keys,
+    **Q** / **E** to yaw). Hold **Space** to move forward, **Backspace** to move back, **+** / **-** (or
+    Page Up / Page Down) for faster / slower. **Settings > Display > Ghost Cam Smoothing** sets how gently
+    it speeds up, slows down and turns (0 = instant).
 - **`Benchmark`**: a 2-minute automatic performance test (silent, don't touch anything). At the end
   a window shows the results; please send us a screenshot of it.
 

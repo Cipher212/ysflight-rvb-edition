@@ -1,0 +1,57 @@
+# RvB event points per ground object: the strike AI values its targets by these (owner's table, 2026-10-06).
+# One line per object: NAME_PART POINTS
+#   NAME_PART is matched anywhere in the object's name, upper/lower case does not matter.
+#   The FIRST matching line wins, so keep specific names above general ones (e.g. HANGER_WEAPON above HANGER).
+# Objects not listed keep a small default by kind (they still count for METAL RAIN / DEMOLITION).
+# Indestructible objects (strength 9999 and up on this map) and decoration are never attacked whatever they score.
+# Change a line and restart the game; no rebuild needed.
+
+# Ships
+NIMITZ               550   # Carrier
+ADMIRAL-GORSHKOV     550   # Carrier
+SHANDONG             550   # Carrier
+CVN                  550   # Carrier
+WASP                 250   # Light / heli carrier
+HYUGA                250   # Light / heli carrier
+LHD                  250   # Light / heli carrier
+IVANROGOV            250   # Light / heli carrier
+SUPPLY_CLASS          70   # Supply ship
+DESTROYER            200
+UDALOY               200   # Destroyer
+ARLEIGH_BURKE        200   # Destroyer
+
+# Command and radio
+COMMAND_BUILDING     200   # Command center
+5G_BRAINWASHING       70   # Radio tower
+
+# Air defence
+TUNGUSKA              80   # SAM (guns and missiles)
+LINEBACKER            80   # SAM
+CHAPARRAL             80   # SAM
+3M9_KUB               80   # SAM
+PATRIOT               80   # SAM
+S-300                 80   # SAM
+SAM                   80   # [GOP]SAM, SAM_HUMMER
+PICKUPAA              70   # AAA
+GUN_TRUCK             70   # AAA
+AAA                   70
+
+# Armour
+T-80                  60   # Tanks
+M1A2                  60   # Tanks
+
+# Air base
+HANGER_WEAPON         80   # Air base supply hangar
+HANGER2               40   # Air base alert shed
+HANGER                60   # Air base hangar
+TOWER                 50   # Air base tower
+RADAR_SIGHT           50   # Radar sight
+FUELTANK              30   # Fuel tanks
+SMALLTANKS            30   # Fuel tanks
+OLDTANKS              30   # Fuel tanks
+LARGETANKS            30   # Fuel tanks
+
+# Port
+PORT_CRANE            10
+WAREHOUSE             20
+CONTAINERS            20

@@ -72,5 +72,10 @@ func update(delta: float, crashes: PackedFloat32Array) -> void:
 		alive.append(site)
 	_sites = alive
 
+# The render origin moved by delta (main.gd): burning sites are stored in render space.
+func rebase(delta: Vector3) -> void:
+	for site in _sites:
+		site["pos"] -= delta
+
 func site_count() -> int:
 	return _sites.size()

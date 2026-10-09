@@ -99,6 +99,8 @@ var quality: int = 1
 var _time: float = 0.0
 var _spark_mm: MultiMesh = null
 var _flash_mm: MultiMesh = null
+var _spark_mmi: MultiMeshInstance3D = null # at -render_origin: instances are absolute (see set_render_origin)
+var _flash_mmi: MultiMeshInstance3D = null
 var _spark_mat: ShaderMaterial = null
 var _flash_mat: ShaderMaterial = null
 var _atlas_tex: ImageTexture = null
@@ -127,7 +129,8 @@ func _ensure_init() -> void:
 	_rng.randomize()
 	_spark_mat = _material(SPARK_SHADER)
 	var dead_spark := Transform3D(Basis(Vector3.ZERO, Vector3(1.0, 0.1, -1000.0), Vector3.ZERO), Vector3.ZERO)
-	_spark_mm = _ring_multimesh("Sparks", _crossed_fin_mesh(0.18, _spark_mat), MAX_SPARKS, dead_spark)
+	_spark_mmi = _ring_multimesh("Sparks", _crossed_fin_mesh(0.18, _spark_mat), MAX_SPARKS, dead_spark)
+	_spark_mm = _spark_mmi.multimesh
 
 	_flash_mat = _material(FLASH_SHADER)
 	_build_atlas()
@@ -135,13 +138,22 @@ func _ensure_init() -> void:
 	quad.size = Vector2(1.0, 1.0)
 	quad.material = _flash_mat
 	var dead_flash := Transform3D(Basis(Vector3.ZERO, Vector3(0.0, 0.0, 0.1), Vector3(-1000.0, 0.0, 0.0)), Vector3.ZERO)
-	_flash_mm = _ring_multimesh("Flashes", quad, MAX_FLASHES, dead_flash)
+	_flash_mmi = _ring_multimesh("Flashes", quad, MAX_FLASHES, dead_flash)
+	_flash_mm = _flash_mmi.multimesh
 
 	if _water_splash == null:
 		_water_splash = WaterSplashFX.new()
 		_water_splash.name = "WaterSplashFX"
 		add_child(_water_splash)
 	_water_splash.set_quality(quality)
+
+# At setup and whenever the render origin moves (main.gd): GPU-aged instances are stored in absolute
+# coordinates under nodes at -origin, so they never need moving; delta rebases stored render positions.
+func set_render_origin(origin: Vector3, delta: Vector3) -> void:
+	_ensure_init()
+	_spark_mmi.position = -origin
+	_flash_mmi.position = -origin
+	_water_splash.set_render_origin(origin, delta)
 
 func set_quality(p_quality: int) -> void:
 	quality = p_quality
@@ -378,7 +390,7 @@ func _trigger_fallback(pos: Vector3, radius: float, n_scale: float) -> void:
 
 # MODEL_MATRIX packing: see shaders/spark_streak.gdshader
 func _spawn_spark(pos: Vector3, vel: Vector3, length: float, life: float, color: Color) -> void:
-	_spark_mm.set_instance_transform(_spark_head, Transform3D(Basis(vel, Vector3(length, maxf(life, 0.08), _time), Vector3.ZERO), pos))
+	_spark_mm.set_instance_transform(_spark_head, Transform3D(Basis(vel, Vector3(length, maxf(life, 0.08), _time), Vector3.ZERO), pos - _spark_mmi.position))
 	_spark_mm.set_instance_color(_spark_head, color)
 	_spark_head = (_spark_head + 1) % MAX_SPARKS
 
@@ -388,7 +400,7 @@ func _spawn_flash(pos: Vector3, size0: float, size1: float, life: float, color: 
 	_last_flash_size1 = size1
 	var roll := _rng.randf_range(0.0, TAU)
 	var f_idx: float = float(_rng.randi_range(0, 4)) if frame < 0.0 else frame
-	_flash_mm.set_instance_transform(_flash_head, Transform3D(Basis(Vector3.ZERO, Vector3(size0, size1, life), Vector3(_time, roll, f_idx)), pos))
+	_flash_mm.set_instance_transform(_flash_head, Transform3D(Basis(Vector3.ZERO, Vector3(size0, size1, life), Vector3(_time, roll, f_idx)), pos - _flash_mmi.position))
 	_flash_mm.set_instance_color(_flash_head, color)
 	_flash_head = (_flash_head + 1) % MAX_FLASHES
 
@@ -409,7 +421,7 @@ func _material(shader: Shader) -> ShaderMaterial:
 	m.shader = shader
 	return m
 
-func _ring_multimesh(node_name: String, mesh: Mesh, count: int, dead: Transform3D) -> MultiMesh:
+func _ring_multimesh(node_name: String, mesh: Mesh, count: int, dead: Transform3D) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
@@ -426,7 +438,7 @@ func _ring_multimesh(node_name: String, mesh: Mesh, count: int, dead: Transform3
 	mmi.custom_aabb = AABB(Vector3(-60000.0, -100.0, -60000.0), Vector3(120000.0, 20000.0, 120000.0))
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
-	return mm
+	return mmi
 
 # Two perpendicular quads along Z (-0.5 .. 0.5), UV.y = 0 at the front tip.
 func _crossed_fin_mesh(half_width: float, material: Material) -> ArrayMesh:

@@ -1,0 +1,47 @@
+YSFlight RvB Edition - replacement jet loops (2026-10-05)
+
+REWORK REQUIRED - owner listening feedback, 2026-10-05
+Applies to jet_cockpit.wav and jet_external.wav, including their afterburner use.
+The owner reports that the in-game result does not sound like a jet engine and
+that the previous stock sounds were better. Approval of the source recordings
+did not constitute acceptance of the processed/in-game result. Audio rework is
+deferred at the owner's request; current audio remains in place for now.
+Investigate source selection, loop preparation, pitch and filtering together
+before choosing a fix. Functional tests do not establish acceptable sound quality.
+
+Both source sounds are offered under CC0 1.0 Universal, verified on their
+Freesound pages on 2026-10-05. Attribution is voluntary; these credits preserve
+the origin of the owner-approved recordings. No War Thunder assets are used.
+License: https://creativecommons.org/publicdomain/zero/1.0/
+
+jet_cockpit.wav
+  Source: "jet_engine.wav" by minian89
+  https://freesound.org/people/minian89/sounds/152509/
+  Download name: 152509__minian89__jet_engine.wav
+  Original SHA256: 6c217999c99bda33de42786e3a7ba45df9b1c392b13379fde2e0161feaa1a1de
+  Original is synthetic power-up / idle / power-down; use only 30.0-36.0 s
+  around full power, excluding the startup and shutdown.
+  Prepared: mono PCM16, 44100 Hz, 5.8 s, 511560 PCM bytes.
+  SHA256: ddbbede624759be7afccdb06ae60192bd8a41c9efd0e4109703c0d943a31ae61
+
+jet_external.wav
+  Source: "Jet Engine" by m_cel
+  https://freesound.org/people/m_cel/sounds/534856/
+  Download name: 534856__m_cel__jet-engine.ogg
+  Original SHA256: 53a16d8819f96ab3d264891c398aabcda47e33375c186070ee5f67faa442aea4
+  Original is a static jet engine test; use 2.0-8.0 s from its steady portion.
+  Prepared: mono PCM16, 48000 Hz, 5.8 s, 556800 PCM bytes.
+  SHA256: a23ce33150f9e4d5fb0530dfb1171ebdc2c9740af8bda916f3c655ad99cd7fae
+
+Preparation: average stereo channels, remove DC, make a 200 ms equal-power
+overlap join, remove residual DC, normalize to -14 dBFS RMS with -1 dBFS peak
+ceiling, save PCM16 WAV. Output peaks are approximately -6.99 and -6.63 dBFS.
+Both loops are shared resources, including the afterburner voice. Pitch and
+mix envelopes are still controlled by the game. Extra cockpit muffling uses
+the existing PlayerEngine filter; it is not baked irreversibly into the WAV.
+
+Reproduce with tools/prepare_jet_audio.py and the two original downloads in
+ignore/replays/sound. Python dependencies (offline developer tooling only):
+numpy and soundfile. Neither original download nor the converter dependencies
+are required to play the game. File regions, join and normalization settings
+are constants in the preparation tool. WAVs load directly without import cache.

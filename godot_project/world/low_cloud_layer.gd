@@ -6,6 +6,8 @@ extends Node3D
 # billowing top dome) with vertex colours (off-white top, grey underside) and a single MultiMeshInstance3D.
 # Wind offset is maintained as a single shared vector and passed to the shader.
 # Evaluates camera immersion at ~10 Hz with altitude pre-rejection and smoothly fades scene fog.
+# The clouds are absolute map positions: the MultiMeshInstance3D sits at -render_origin (the floating render
+# origin) and the shader wraps them in absolute coordinates; the camera is converted back to absolute.
 
 const CLOUD_COUNT := 8
 const FIELD_MIN := Vector2(-24000.0, -24000.0)
@@ -27,6 +29,7 @@ var _mmi: MultiMeshInstance3D = null
 var _mm: MultiMesh = null
 var _cloud_mat: ShaderMaterial = null
 
+var _render_origin := Vector3.ZERO
 var _clouds_enabled: bool = true
 var _wind_offset := Vector3.ZERO
 var _sample_timer: float = 0.0
@@ -74,6 +77,12 @@ func setup(sky_env: Node) -> void:
 
 	_generate_clouds(1984)
 
+# At setup and whenever the render origin moves (main.gd).
+func set_render_origin(origin: Vector3) -> void:
+	_render_origin = origin
+	if _mmi != null:
+		_mmi.position = -origin
+
 func set_clouds_enabled(enabled: bool) -> void:
 	_clouds_enabled = enabled
 	if _mmi != null:
@@ -98,6 +107,7 @@ func reset_state() -> void:
 	if _sky_env != null and _sky_env.has_method("set_cloud_immersion"):
 		_sky_env.set_cloud_immersion(0.0)
 
+# cam_pos: render space.
 func update(delta: float, cam_pos: Vector3, is_paused: bool = false) -> void:
 	if not _clouds_enabled:
 		return
@@ -114,7 +124,7 @@ func update(delta: float, cam_pos: Vector3, is_paused: bool = false) -> void:
 	_sample_timer += delta
 	if _sample_timer >= SAMPLE_INTERVAL_S:
 		_sample_timer = 0.0
-		_target_immersion = _sample_membership(cam_pos)
+		_target_immersion = _sample_membership(cam_pos + _render_origin)
 
 	# Smooth visual interpolation of immersion fog
 	var speed: float = IMMERSION_IN_SPEED if _target_immersion > _current_immersion else IMMERSION_OUT_SPEED
@@ -125,7 +135,7 @@ func update(delta: float, cam_pos: Vector3, is_paused: bool = false) -> void:
 		if _sky_env != null and _sky_env.has_method("set_cloud_immersion"):
 			_sky_env.set_cloud_immersion(_current_immersion)
 
-# Evaluates whether the camera position is inside any cloud instance.
+# Evaluates whether the camera position (absolute) is inside any cloud instance.
 func _sample_membership(cam_pos: Vector3) -> float:
 	# Altitude pre-rejection (1 float check saves distance calculations)
 	if cam_pos.y < ALTITUDE_MIN_CHECK or cam_pos.y > ALTITUDE_MAX_CHECK:

@@ -24,6 +24,8 @@ var chase_focus_alive := true
 
 func setup(m: Node) -> void:
 	main = m
+	# load_yfs draws a fresh route seed; fix that separate RNG too for repeatable benchmarks.
+	main.ysflight_sim.debug_set_route_seed(0)
 	var args := OS.get_cmdline_user_args()
 	for arg in args:
 		if arg.begins_with("--bench-seconds="):
@@ -63,7 +65,8 @@ func setup(m: Node) -> void:
 	start_tick = Engine.get_physics_frames()
 	main.ysflight_sim.get_frame_stats() # Reset accumulators
 	
-	csv_lines.append("frame,sim_time,wall_ms,ticks,sim_ms,sync_ms,camera_ms,fetch_ms,vfx_ms,hud_ms,gpu_ms,render_cpu_ms,draw_calls,primitives,objects,nodes,alive_air,weapons,explosions,visual_entities,cam_mode,flag,audio_ms,motion_err,fx_cpp_ms,chase_aircraft_key,chase_focus_alive")
+	csv_lines.append("frame,sim_time,wall_ms,ticks,sim_ms,sync_ms,camera_ms,fetch_ms,vfx_ms,hud_ms,gpu_ms,render_cpu_ms,draw_calls,primitives,objects,nodes,alive_air,weapons,explosions,visual_entities,cam_mode,flag,audio_ms,motion_err,fx_cpp_ms,chase_aircraft_key,chase_focus_alive,origin_shift_ms")
+	main.ysflight_sim.render_origin_shifted.connect(func(delta: Vector3) -> void: _motion_prev_pos -= delta)
 
 # Keep the normal chase view on an aircraft after the player dies, without changing the simulation.
 func follow_transform(player_tfm: Transform3D, tel: Dictionary, airplanes: Dictionary) -> Transform3D:
@@ -158,6 +161,7 @@ func record_frame(camera_us: float, fetch_us: float, vfx_us: float, hud_us: floa
 	var explosions: float = stats[5]
 	var visual_entities: float = stats[6]
 	var fx_cpp_ms: float = stats[7] if stats.size() > 7 else 0.0
+	var origin_shift_ms: float = stats[8] if stats.size() > 8 else -1.0 # -1 = no render origin shift this frame
 	
 	var rid: RID = main.get_viewport().get_viewport_rid()
 	var gpu_ms: float = RenderingServer.viewport_get_measured_render_time_gpu(rid)
@@ -205,7 +209,7 @@ func record_frame(camera_us: float, fetch_us: float, vfx_us: float, hud_us: floa
 	var line := "%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.4f,%.3f" % [
 		float(frame_count), sim_time, wall_ms, ticks, sim_ms, sync_ms, camera_us/1000.0, fetch_us/1000.0, vfx_us/1000.0, hud_us/1000.0, gpu_ms, render_cpu_ms, draw_calls, primitives, objects, nodes, alive_air, weapons, explosions, visual_entities, float(cam_mode), float(flag), audio_us/1000.0, motion_err, fx_cpp_ms
 	]
-	line += ",%d,%d" % [chase_aircraft_key, 1 if chase_focus_alive else 0]
+	line += ",%d,%d,%.3f" % [chase_aircraft_key, 1 if chase_focus_alive else 0, origin_shift_ms]
 	csv_lines.append(line)
 	frame_count += 1
 	
@@ -246,4 +250,8 @@ func _finish_benchmark() -> void:
 	
 	main.ysflight_sim.log_to_crashlog("Benchmark finished: " + out_dir)
 	print("Benchmark finished: " + out_dir)
+	if DisplayServer.get_name() != "headless":
+		# Measurement has ended; capture the actual render size/view for benchmark verification.
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png(out_dir.path_join("final_frame.png"))
 	get_tree().quit()

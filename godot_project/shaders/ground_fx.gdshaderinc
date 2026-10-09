@@ -5,13 +5,16 @@
 // - ground_detail(): natural land (greens / browns, not grey runways or roads) gets flat-coloured flecks near the
 //   camera (a sense of speed and height when low) and very large, faint patches on green (land vs sea up high).
 // Global shader uniforms (project.godot [shader_globals]): sun_direction (towards the sun, main.gd), sky_haze
-// (linear, world/sky_environment.gd), and the Graphics settings' on/off switches (graphics_settings.gd).
+// (linear, world/sky_environment.gd), the Graphics settings' on/off switches (graphics_settings.gd) and
+// render_origin (the floating render origin, set by the C++ bridge: world = render + render_origin).
+// The patterns below take ABSOLUTE world positions (absolute_world()), so they do not jump when it moves.
 global uniform vec3 sun_direction;
 global uniform vec3 sky_haze;
 global uniform float daylight_strength;
 global uniform float cloud_shadows_on;
 global uniform float water_shine_on;
 global uniform float ground_detail_on;
+global uniform vec3 render_origin;
 uniform sampler2D cloud_noise : filter_linear_mipmap, repeat_enable;
 
 const mat2 ROT_A = mat2(vec2(0.799, 0.602), vec2(-0.602, 0.799)); // rotated grids: no axis-aligned patterns
@@ -46,6 +49,11 @@ const float FLECK_RANGE = 1500.0;       // m: flecks fade out (sub-pixel beyond)
 const float PATCH_TILE = 2600.0;        // m per repeat of the noise for the large patches
 const float PATCH_DEPTH = 0.09;         // brightness swing of the patches
 const vec3 PATCH_DRY = vec3(1.06, 1.0, 0.8); // tint towards dry grass on the light side
+
+// Absolute world position of a render-space point.
+vec3 absolute_world(vec3 render_pos) {
+	return render_pos + render_origin;
+}
 
 float gfx_hash(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);

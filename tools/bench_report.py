@@ -223,6 +223,22 @@ def main():
             summary["motion_err_p95_pct"] = 100.0 * percentile(me, 95)
             summary["motion_err_p99_pct"] = 100.0 * percentile(me, 99)
 
+    # Floating render origin (C++ core/render_origin.h): extra time of each shift frame plus the next one,
+    # against the median of the frames around it (the deferred scene-tree updates land in the next frame).
+    if "origin_shift_ms" in col_idx:
+        wall = [r[col_idx["wall_ms"]] for r in valid_rows]
+        shift_idx = [i for i, r in enumerate(valid_rows) if r[col_idx["origin_shift_ms"]] >= 0.0]
+        extra = []
+        for i in shift_idx:
+            around = sorted(wall[max(0, i - 15):max(0, i - 2)] + wall[i + 3:i + 15])
+            if around:
+                base = around[len(around) // 2]
+                extra.append(sum(w - base for w in wall[i:i + 2]))
+        if extra:
+            summary["origin_shifts"] = len(shift_idx)
+            summary["origin_shift_extra_ms_median"] = percentile(extra, 50)
+            summary["origin_shift_extra_ms_max"] = max(extra)
+
     # Leak check
     nodes_all = [r[col_idx["nodes"]] for r in valid_rows]
     ve_all = [r[col_idx["visual_entities"]] for r in valid_rows]
@@ -252,6 +268,8 @@ def main():
     print(f"Missed 60fps (>16.67ms): {summary['miss_60_pct']:.2f}%")
     if "motion_err_mean_pct" in summary:
         print(f"Motion error (player jet, 0% = smooth): mean {summary['motion_err_mean_pct']:.1f}% | p95 {summary['motion_err_p95_pct']:.1f}% | p99 {summary['motion_err_p99_pct']:.1f}%")
+    if "origin_shifts" in summary:
+        print(f"Render origin shifts: {summary['origin_shifts']} | extra ms (shift frame + next): median {summary['origin_shift_extra_ms_median']:.1f}, max {summary['origin_shift_extra_ms_max']:.1f}")
     print(f"Missed 30fps (>33.33ms): {summary['miss_30_pct']:.2f}%")
     print(f"Hitches >20ms: {summary.get('hitches_per_min', 0):.1f} per minute")
     

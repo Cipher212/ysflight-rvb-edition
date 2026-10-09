@@ -40,3 +40,7 @@ daylight_strength={
 "type": "float",
 "value": 1.0
 }
+render_origin={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}

@@ -6,6 +6,9 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_lambert_wrap, skip_
 // cool grey underside) and directional sunlight. No transparency, no specular, no raymarching.
 // Rigidly wraps entire cloud centres across the field boundary to prevent vertex tearing.
 
+// Cloud instances are absolute positions under a node at -render_origin (world/low_cloud_layer.gd); the wrap
+// across the field is done in absolute coordinates.
+global uniform vec3 render_origin;
 uniform vec3 wind_offset = vec3(0.0);
 uniform vec2 field_min = vec2(-24000.0, -24000.0);
 uniform vec2 field_size = vec2(48000.0, 48000.0);
@@ -17,7 +20,7 @@ void vertex() {
 	vec3 world_norm = normalize(norm_mat * NORMAL);
 
 	// Center of this cloud instance
-	vec3 base_center = MODEL_MATRIX[3].xyz;
+	vec3 base_center = MODEL_MATRIX[3].xyz + render_origin; // absolute
 	float speed_mult = INSTANCE_CUSTOM.r > 0.01 ? INSTANCE_CUSTOM.r : 1.0;
 	vec3 moved_center = base_center + wind_offset * speed_mult;
 

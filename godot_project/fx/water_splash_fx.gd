@@ -18,6 +18,7 @@ var quality: int = 1
 
 var _time: float = 0.0
 var _multimesh: MultiMesh = null
+var _mmi: MultiMeshInstance3D = null # at -render_origin: instances are absolute (fx/puff_system.gd)
 var _material: ShaderMaterial = null
 var _mesh: ArrayMesh = null
 var _head: int = 0
@@ -72,13 +73,13 @@ func _ensure_init() -> void:
 		_multimesh.set_instance_color(i, Color(0.0, 0.0, 0.0, 0.0))
 	_multimesh.visible_instance_count = MAX_SPLASHES
 
-	var mmi := MultiMeshInstance3D.new()
-	mmi.name = "WaterSplashMultiMesh"
-	mmi.multimesh = _multimesh
+	_mmi = MultiMeshInstance3D.new()
+	_mmi.name = "WaterSplashMultiMesh"
+	_mmi.multimesh = _multimesh
 	# Conservative flight-volume bounds covering map area without arbitrary 1e7
-	mmi.custom_aabb = AABB(Vector3(-60000.0, -100.0, -60000.0), Vector3(120000.0, 20000.0, 120000.0))
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mmi)
+	_mmi.custom_aabb = AABB(Vector3(-60000.0, -100.0, -60000.0), Vector3(120000.0, 20000.0, 120000.0))
+	_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_mmi)
 
 func reset() -> void:
 	_ensure_init()
@@ -93,6 +94,13 @@ func reset() -> void:
 		_slot_height[i] = 0.0
 		_multimesh.set_instance_transform(i, DEAD_TRANSFORM)
 		_multimesh.set_instance_color(i, Color(0.0, 0.0, 0.0, 0.0))
+
+# The render origin moved (fx/explosion_fx.gd): _slot_pos is render space, the instances absolute.
+func set_render_origin(origin: Vector3, delta: Vector3) -> void:
+	_ensure_init()
+	_mmi.position = -origin
+	for i in MAX_SPLASHES:
+		_slot_pos[i] -= delta
 
 func get_active_count() -> int:
 	_ensure_init()
@@ -185,14 +193,14 @@ func spawn(pos: Vector3, base_rad: float, top_rad: float, height: float, life: f
 	#   Basis.x = (0, 0, 0)
 	#   Basis.y = (base_rad, top_rad, height)
 	#   Basis.z = (spawn_time, lifetime, surface_y)
-	#   Origin = world position at water contact level
+	#   Origin = absolute world position at water contact level
 	var t := Transform3D(
 		Basis(
 			Vector3.ZERO,
 			Vector3(clamped_base, clamped_top, clamped_h),
 			Vector3(_time, clamped_life, pos.y)
 		),
-		pos
+		pos - _mmi.position
 	)
 	_multimesh.set_instance_transform(slot, t)
 	_multimesh.set_instance_color(slot, Color(1.0, 1.0, 1.0, alpha))

@@ -6,6 +6,8 @@ extends RefCounted
 
 const INTERIOR_OTHERS_DB: float = -32.0
 const INTERIOR_EFFECTS_DB: float = -12.0
+const PLAYER_LPF_CUTOFF_HZ: float = 650.0
+const DEFAULT_LPF_CUTOFF_HZ: float = 900.0
 
 # Bus indices and effect indices
 var _player_bus_idx: int = -1
@@ -30,9 +32,9 @@ func _setup_buses() -> void:
 	_effects_bus_idx = _get_or_create_bus("Effects")
 	_cockpit_bus_idx = _get_or_create_bus("Cockpit")
 
-	_player_lpf_idx = _ensure_low_pass_filter(_player_bus_idx)
-	_others_lpf_idx = _ensure_low_pass_filter(_others_bus_idx)
-	_effects_lpf_idx = _ensure_low_pass_filter(_effects_bus_idx)
+	_player_lpf_idx = _ensure_low_pass_filter(_player_bus_idx, PLAYER_LPF_CUTOFF_HZ)
+	_others_lpf_idx = _ensure_low_pass_filter(_others_bus_idx, DEFAULT_LPF_CUTOFF_HZ)
+	_effects_lpf_idx = _ensure_low_pass_filter(_effects_bus_idx, DEFAULT_LPF_CUTOFF_HZ)
 
 	# Hard limiter on Master so many simultaneous explosions/launches never clip the output
 	var master_idx := AudioServer.get_bus_index("Master")
@@ -68,12 +70,14 @@ func _get_or_create_bus(bus_name: StringName) -> int:
 		AudioServer.set_bus_send(idx, "Master")
 	return idx
 
-func _ensure_low_pass_filter(bus_idx: int) -> int:
+func _ensure_low_pass_filter(bus_idx: int, cutoff_hz: float = DEFAULT_LPF_CUTOFF_HZ) -> int:
 	for i in range(AudioServer.get_bus_effect_count(bus_idx)):
-		if AudioServer.get_bus_effect(bus_idx, i) is AudioEffectLowPassFilter:
+		var eff := AudioServer.get_bus_effect(bus_idx, i)
+		if eff is AudioEffectLowPassFilter:
+			eff.cutoff_hz = cutoff_hz
 			return i
 	var lpf := AudioEffectLowPassFilter.new()
-	lpf.cutoff_hz = 900.0
+	lpf.cutoff_hz = cutoff_hz
 	var effect_idx := AudioServer.get_bus_effect_count(bus_idx)
 	AudioServer.add_bus_effect(bus_idx, lpf, effect_idx)
 	AudioServer.set_bus_effect_enabled(bus_idx, effect_idx, false)

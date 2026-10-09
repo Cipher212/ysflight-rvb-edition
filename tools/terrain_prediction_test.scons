@@ -1,9 +1,0 @@
-"""Compile the production terrain sampler against a deterministic elevation fixture."""
-env = Environment()
-env.Append(CPPPATH=["ysce/src/autopilot"])
-if env["PLATFORM"] == "win32":
-    env.Append(CXXFLAGS=["/std:c++17", "/EHsc"])
-else:
-    env.Append(CXXFLAGS=["-std=c++17"])
-env.Program(target="crashlog/native_tests/terrain_prediction_test",
-            source="tools/test_terrain_prediction.cpp")

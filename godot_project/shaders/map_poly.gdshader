@@ -7,14 +7,15 @@ render_mode cull_disabled, specular_disabled;
 #include "res://shaders/ground_fx.gdshaderinc"
 
 void fragment() {
-	vec3 world = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	vec3 world = absolute_world((INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
+	vec3 camera = absolute_world(CAMERA_POSITION_WORLD);
 	vec3 col = COLOR.rgb;
 	vec3 glint = vec3(0.0);
 	float px = length(fwidth(world.xz)); // metres per pixel (ground detail)
 	if (water_shine_on > 0.5 && UV.y > 0.5) {
-		water(col, glint, world, CAMERA_POSITION_WORLD, TIME);
+		water(col, glint, world, camera, TIME);
 	} else if (ground_detail_on > 0.5 && UV.y <= 0.5) {
-		ground_detail(col, world, CAMERA_POSITION_WORLD, px);
+		ground_detail(col, world, camera, px);
 	}
 	float shade = cloud_shadows_on > 0.5 ? cloud_shade(world, TIME) : 1.0;
 	ALBEDO = col * shade;
