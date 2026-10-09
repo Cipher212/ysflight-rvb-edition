@@ -11,7 +11,7 @@ extends Node3D
 #   - Dynamic bus filtering and volume ducking based on interior/exterior view
 #
 # Data comes from ysflight_sim.get_audio_state() (C++), called once per frame from update().
-# All tuning values (distance falloff, cockpit ducking, spool lag, over-G limit) are the consts below.
+# All tuning values (distance falloff, cockpit ducking, over-G limit) are the consts below.
 # Full design notes, tuning history and ideas for later: logs/phase4_audio_log.md
 # ==============================================================================
 
@@ -34,10 +34,6 @@ const EXPLOSION_UNIT_SIZE: float = 1000.0
 const EXPLOSION_MAX_DISTANCE: float = 10000.0
 const PLAYER_EVENT_UNIT_SIZE: float = 40.0
 
-# Engine spool lag. YS lets throttle jump 100% -> 0% instantly; the sound follows with turbine-like
-# inertia instead (exponential, time constant in seconds): winding down is audible for about a second.
-const ENGINE_SPOOL_UP_TAU: float = 0.25
-const ENGINE_SPOOL_DOWN_TAU: float = 0.4
 const BURNER_FADE_IN_TIME: float = 0.15
 const BURNER_FADE_OUT_TIME: float = 0.5
 
@@ -61,8 +57,6 @@ class EngineVoice:
 	var state: int = 0
 	var doppler_factor: float = 1.0
 	var is_player: bool = false
-	var spool: float = 0.0     # smoothed engine power driving the pitch
-	var spool_key: int = -1    # aircraft the spool value belongs to (snap when the voice changes aircraft)
 
 const VOICE_STOPPED: int = 0
 const VOICE_FADING_IN: int = 1
@@ -399,15 +393,6 @@ func _update_engine_voice(
 	var vel := Vector3(aircraft[idx + 4], aircraft[idx + 5], aircraft[idx + 6])
 	var engine_kind := int(aircraft[idx + 7])
 	var power := aircraft[idx + 8]
-
-	# Spool lag: smooth the power; snap when this voice has just been given a different aircraft
-	if v.spool_key != v.assigned_key:
-		v.spool_key = v.assigned_key
-		v.spool = power
-	else:
-		var tau: float = ENGINE_SPOOL_UP_TAU if power > v.spool else ENGINE_SPOOL_DOWN_TAU
-		v.spool += (power - v.spool) * (1.0 - exp(-delta / tau))
-	power = v.spool
 
 	v.engine_player.global_position = pos
 	v.burner_player.global_position = pos

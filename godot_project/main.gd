@@ -47,7 +47,7 @@ const EventSessionScript = preload("res://core/event_session.gd")
 const FreeFlightSessionScript = preload("res://core/free_flight_session.gd")
 const Kit = preload("res://ui/ui_kit.gd")
 const EventOverlayScript = preload("res://ui/event_overlay.gd")
-const SpawnMenuScript = preload("res://ui/spawn_menu.gd")
+const PreflightScene = preload("res://ui/preflight_flow.tscn")
 const SunGlareScript = preload("res://fx/sun_glare.gd")
 const BlastGlowScript = preload("res://fx/blast_glow.gd")
 const LowCloudLayerScript = preload("res://world/low_cloud_layer.gd")
@@ -77,6 +77,7 @@ var arrival_test_mode := false # --ai-arrival / --ai-combat test harnesses (no p
 var event_mode := false     # offline RvB event (core/app_state.gd, set by the menus)
 var free_flight_mode := false # Home > FREE FLIGHT: the map with no other aircraft
 var event_session: Node = null
+var preflight_session: Node = null
 var day_cycle: Node = null
 var low_cloud_layer: Node3D = null
 var cockpit_mfd: Node3D = null
@@ -273,19 +274,21 @@ func _ready() -> void:
 	if event_mode:
 		event_session = EventSessionScript.new()
 		add_child(event_session)
-		event_session.setup(self, event_config) # its first spawn_menu_requested is deferred: menus get it
+		event_session.setup(self, event_config)
+		preflight_session = event_session
 		day_cycle.bind_event_session(event_session)
 		var overlay: CanvasLayer = EventOverlayScript.new()
 		add_child(overlay)
 		overlay.setup(event_session)
-		var spawn_menu: CanvasLayer = SpawnMenuScript.new()
-		add_child(spawn_menu)
-		spawn_menu.setup(event_session)
+		var preflight_menu: CanvasLayer = PreflightScene.instantiate()
+		add_child(preflight_menu)
+		preflight_menu.setup(event_session)
 	elif free_flight_mode:
 		var free_session: Node = FreeFlightSessionScript.new()
 		add_child(free_session)
 		free_session.setup(self)
-		var free_menu: CanvasLayer = SpawnMenuScript.new()
+		preflight_session = free_session
+		var free_menu: CanvasLayer = PreflightScene.instantiate()
 		add_child(free_menu)
 		free_menu.setup(free_session)
 	elif benchmark_mode:
@@ -374,6 +377,14 @@ func _process(delta: float) -> void:
 		benchmark.record_frame(t1 - t0, t2 - t1, t3 - t2, t4 - t3, t5 - t4)
 
 func _update_hud(delta: float, player_tfm: Transform3D, tel: Dictionary, airplanes: Dictionary) -> void:
+	if preflight_session != null and not preflight_session.in_flight():
+		hud.hide()
+		radar_scope.hide()
+		if glass_hud != null:
+			glass_hud.hide()
+		return
+	if not radar_scope.visible:
+		radar_scope.show()
 	# Only the locked ground target is needed (fetching all ~500 ground objects every frame cost ~1 ms)
 	var grounds := {}
 	var locked_gnd: int = int(tel.get("locked_ground_target_key", -1))

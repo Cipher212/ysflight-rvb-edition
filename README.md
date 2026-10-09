@@ -1,11 +1,21 @@
-# YSFlight RvB Edition - v0.4.0-pre-alpha
+# YSFlight RvB Edition - v0.5.0-pre-alpha
 
 YSFlight's flight simulation (YSFlight Community Edition) running inside the Godot 4 engine, built for
 the RvB (Red vs Blue) community events. **This is a pre-alpha test build**: expect bugs and missing
-features. Right now you can set up and fly an offline RvB event against the AI on the Luavi map
-(up to 18 vs 18).
+features. You can set up and fly offline RvB events against the AI on the Luavi map, or use Free Flight.
 
-**Latest update — 9 October 2026:**
+**New in v0.5.0 — 9 October 2026:**
+- Pre-flight lobby for offline events and Free Flight: choose your team, view the roster, use local chat,
+  enter the hangar or spectate your team. Team choice locks when you enter the hangar or spectate.
+- Offline 8v8 / 16v16 setup: you replace one AI pilot on your chosen team. A 30-second countdown begins
+  on first entering the hangar or spectating; aircraft can be placed before combat starts.
+- Separate 3D hangar using Luavi scenery, parked aircraft and a slowly orbiting camera. The world keeps
+  the same size for fighters and heavies; only the camera framing changes.
+- Per-hardpoint weapon selection with symmetric loading, adjustable fuel, team-specific starts and saved
+  loadout presets. Selecting a station or weapon smoothly brings the camera to that hardpoint.
+- Aircraft selection grouped into Gunner, Multirole, Attacker, Stealth, Heavy and CAS. Defunct BVR-tagged
+  aircraft and UCAVs are hidden from player selection.
+- Throttle now takes 2.4 seconds to move between idle and full power; engine audio follows actual power.
 - Updated F-16 cockpit model, physical glass HUD and working MFD placement on the tilted instrument panel.
 - Unified combat AI with shared radar detections, threat assessment, revised ground-attack survival and recovery.
 - Close-combat turns use available aircraft lift up to a 10.9 G command, manoeuvre flaps and speed management.
@@ -75,8 +85,14 @@ the FPS readout.
 4. **First start only:** a black window opens and says it is downloading the Godot engine and
    preparing the game files. **Wait 1-3 minutes** and do not close it. Next time the game starts in
    a few seconds.
-5. The game window opens on the **main menu**. Click **LOCAL**, set up your event (or keep the last
-   one) and click **FLY**. In the spawn menu pick your aircraft and click **FLY** again.
+5. The game opens on the **main menu**. Click **LOCAL**, choose **8 vs 8** or **16 vs 16**, set up your
+   event (or keep the last one), then click **FLY**. Choose your team in the lobby and select
+   **ENTER HANGAR**. Pick an aircraft, weapons, fuel and start position, then select **FLY NOW**.
+   **FREE FLIGHT** uses the same lobby and hangar without enemy aircraft.
+
+In the hangar, drag to orbit, use the mouse wheel to zoom, and hold Shift while dragging to change
+camera height. Double-click the preview to return to the overview. Select a hardpoint in the list
+to inspect its weapon choices. Your team locks when you first enter the hangar or spectate.
 
 Keep the black window open while you play (it closes by itself when you quit the game).
 To **quit**, close the game window (or press Alt+F4).
@@ -90,11 +106,11 @@ To **quit**, close the game window (or press Alt+F4).
 - **Views:** **F1** = cockpit (with the HUD), **F2** = outside view. Hold **U H K M J N** to look around.
   RvB is flown with these two; for the other cameras (**F3-F8**, **[ ]** picks the aircraft in F6), turn on
   **Settings > Display > All Camera Views**.
-- **Shot down?** The spawn menu opens after 3 seconds; pick a jet and fly again.
+- **Shot down?** Aircraft selection opens after 3 seconds; pick a jet and fly again.
 - **Leave your jet:** press **Esc** twice (costs a death unless you have landed and stopped).
-- **Settings** (controls, sensitivity, graphics): **SETTINGS** on the main menu or in the spawn menu.
+- **Settings** (controls, sensitivity, graphics): **SETTINGS** on the main menu or in the lobby/hangar.
   Events never pause.
-- **End early:** **END EVENT** in the spawn menu (click twice to confirm).
+- **End early:** **END EVENT** in the lobby (click twice to confirm).
 
 Prefer a gamepad or joystick? Just plug it in before starting; it is detected when you move it.
 Full key list: see [Controls](#controls-ysflight-defaults) below.
@@ -165,7 +181,8 @@ Just delete the game folder. Nothing else was installed. (Your settings file is 
 | Debug text | F11 |
 | Pause | P |
 
-You respawn automatically 5 seconds after being shot down. All keys can be changed in **Esc**.
+Offline events and Free Flight return to aircraft selection after a loss. The standalone classic
+test/spectator modes retain automatic respawn. All keys can be changed in **SETTINGS**.
 
 ## Reporting problems
 
@@ -176,7 +193,7 @@ Tell us what you did and what happened, what PC you have (laptop/desktop, graphi
 
 - **YSFlight** by **Soji Yamakawa (CaptainYS)** - http://www.ysflight.com, https://github.com/captainys
 - **YSFlight Community Edition (YSCE)** by the **YSCE Development Committee** - https://github.com/YSCEDC/YSCE
-  (the simulation code in `ysce/` and `ysce_public/`, BSD licence: see `ysce/LICENSE`)
+  (simulation engine; BSD licence text included in `THIRD_PARTY_LICENSES.txt`)
 - **YS WW3 / Luavi**: map and ground objects by **UltraViolet (Waspe414)**, ground objects by
   **CrazyPilot**, and the **2ch** ground-object pack by the 2ch YSFlight creators. Used with permission;
   their original credit and permission notes are kept next to the files in `godot_project/user/`.
@@ -187,14 +204,7 @@ Full licence texts: `THIRD_PARTY_LICENSES.txt`.
 
 ## For developers
 
-The game code is in `godot_project/` (GDScript, organised in `camera/`, `controls/`, `fx/`, `audio/`,
-`ui/`, `core/`, `tests/`, shaders in `shaders/`) and `gdextension/ysflight/src/` (the C++ bridge to the
-YSFlight simulation, organised in `core/`, `render/`, `sim/`, `bridge/`). A pre-built bridge
-(`godot_project/bin/*.dll`) is included, so you only need to rebuild it if you change the C++: install
-Python + SCons + Visual Studio 2022 C++ tools, then run
-`python -m SCons platform=windows target=template_debug` in `gdextension/ysflight`. The build also needs
-the full YSCE sources (https://github.com/YSCEDC/YSCE) and godot-cpp; `ysce/` here holds only the files
-changed for the RvB Edition (including the tactical AI in `ysce/src/autopilot/fsrvb*`).
-
-Automated test (plays the mission with scripted inputs and checks every system, with screenshots):
-`python tools/run_tests.py`. Please run it before sending changes.
+GitHub downloads contain the playable Godot project, assets and pre-built simulation bridge
+(`godot_project/bin/*.dll`). Native source/build trees, private research and development tools are
+kept outside this runtime distribution. The GDScript is in `godot_project/`, organised in `camera/`,
+`controls/`, `fx/`, `audio/`, `ui/` and `core/`; shaders are in `shaders/`.

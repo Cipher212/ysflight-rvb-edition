@@ -59,6 +59,8 @@ func _on_state(state: Dictionary) -> void:
 	_last["player_parked"] = state.get("player_parked", false)
 	# Only push changed text (setting Label.text relayouts)
 	var clock := Kit.clock(float(state.get("time_left", 0.0)))
+	if float(state.get("countdown", -1.0)) >= 0:
+		clock = "START %02d" % ceili(float(state["countdown"]))
 	if clock != _last.get("clock", ""):
 		_clock.text = clock
 		_last["clock"] = clock

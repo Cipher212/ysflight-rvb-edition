@@ -14,6 +14,13 @@ signal changed(key: String)
 
 const CONFIG_PATH: String = "user://controls.cfg"
 
+# Linear throttle spool delays (0% -> 100% in 2.4s, 50% in 1.2s)
+const THROTTLE_SPOOL_UP_TIME: float = 2.4
+const THROTTLE_SPOOL_DOWN_TIME: float = 2.4
+const THROTTLE_SPOOL_UP_RATE: float = 1.0 / THROTTLE_SPOOL_UP_TIME
+const THROTTLE_SPOOL_DOWN_RATE: float = 1.0 / THROTTLE_SPOOL_DOWN_TIME
+const AFTERBURNER_ENGAGE_THRESHOLD: float = 0.99
+
 const SETTINGS: Array[Dictionary] = preload("res://controls/settings_schema.gd").SETTINGS # every setting + default
 
 var main: Node = null
@@ -21,6 +28,7 @@ var ysflight_sim: YSFlightSimulation = null
 var settings_panel: CanvasLayer = null
 # Set by core/event_session.gd during an offline event: Esc ("open_settings") goes there instead.
 var open_settings_handler: Callable = Callable()
+var _session_input_enabled := true
 
 var _config: ConfigFile = ConfigFile.new()
 var _values: Dictionary = {}
@@ -35,6 +43,7 @@ var _last_joy_throttle_val: float = -999.0
 
 # Continuous state
 var current_throttle: float = 0.85
+var _actual_throttle: float = 0.85
 var _afterburner_lit: bool = false
 var current_trim: float = 0.0
 
@@ -241,6 +250,12 @@ func get_flight_controls_state() -> Dictionary:
 # Input Handling
 # ------------------------------------------------------------------------------
 func _input(event: InputEvent) -> void:
+	if not _session_input_enabled:
+		var binding := event_to_binding_string(event)
+		if event.is_pressed() and not event.is_echo() and "open_settings" in _binding_to_actions.get(binding, []):
+			_on_action_pressed("open_settings")
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventJoypadMotion or event is InputEventJoypadButton:
 		_last_joy_device = event.device
 
@@ -295,6 +310,16 @@ func _input(event: InputEvent) -> void:
 					if not still_held:
 						_action_held[act] = false
 						_on_action_released(act)
+
+func set_session_input_enabled(enabled: bool) -> void:
+	_session_input_enabled = enabled
+	_held_inputs.clear()
+	_action_held.clear()
+	_action_just_pressed.clear()
+	set_physics_process(enabled)
+	_mouse_drag_view_held = false
+	if not enabled and ysflight_sim != null:
+		ysflight_sim.set_player_weapon_inputs(false, false, false, false, false)
 
 func _on_action_pressed(action: String) -> void:
 	# Menu & Pause work even during spectator/ai mode or pause
@@ -489,6 +514,7 @@ func _physics_process(delta: float) -> void:
 		if not _initialized_telemetry or (is_alive and not _prev_is_alive):
 			if t.has("throttle"):
 				current_throttle = float(t.get("throttle", 0.85))
+				_actual_throttle = current_throttle
 			if t.has("afterburner"):
 				_afterburner_lit = bool(t.get("afterburner", false))
 			_initialized_telemetry = true
@@ -505,6 +531,11 @@ func _physics_process(delta: float) -> void:
 		if gf != null and gf.has_method("is_gloc"):
 			is_unconscious = gf.is_gloc()
 
+	# Spool throttle linearly (0% to 100% in 2.4s)
+	var spool_rate: float = THROTTLE_SPOOL_UP_RATE if current_throttle > _actual_throttle else THROTTLE_SPOOL_DOWN_RATE
+	_actual_throttle = move_toward(_actual_throttle, current_throttle, spool_rate * delta)
+	var actual_ab: bool = _afterburner_lit and _actual_throttle >= AFTERBURNER_ENGAGE_THRESHOLD
+
 	if is_unconscious:
 		_last_elevator = 0.0
 		_last_aileron = 0.0
@@ -516,8 +547,8 @@ func _physics_process(delta: float) -> void:
 			0.0,
 			0.0,
 			0.0,
-			current_throttle,
-			_afterburner_lit,
+			_actual_throttle,
+			actual_ab,
 			current_trim
 		)
 		ysflight_sim.set_player_weapon_inputs(
@@ -703,8 +734,8 @@ func _physics_process(delta: float) -> void:
 		_last_elevator,
 		_last_aileron,
 		_last_rudder,
-		current_throttle,
-		_afterburner_lit,
+		_actual_throttle,
+		actual_ab,
 		current_trim
 	)
 

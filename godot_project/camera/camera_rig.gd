@@ -80,6 +80,9 @@ var _sim: YSFlightSimulation = null
 var _controls: Node = null
 var _spectator_input := false # --ai-player: mouse orbit + F1-F8
 var _player_input := true     # normal play: look keys / right stick / hat (off when the AI flies)
+var _session_spectator_iff := -1
+var _launch_spectator := false
+var _launch_player := true
 var _dragging := false
 var _locked_basis := Basis.IDENTITY
 var _locked_basis_valid := false
@@ -105,6 +108,8 @@ func setup(sim: YSFlightSimulation, controls: Node, ai_mode: bool, benchmark: bo
 	_controls = controls
 	_spectator_input = ai_mode and not benchmark
 	_player_input = not ai_mode
+	_launch_spectator = _spectator_input
+	_launch_player = _player_input
 	camera = Camera3D.new()
 	camera.near = 1.5
 	camera.far = 80000.0
@@ -737,6 +742,8 @@ func _other_keys(airplanes: Dictionary, player_iff: int) -> Array:
 	var friends: Array = []
 	for key in airplanes.keys():
 		var st: Dictionary = airplanes[key]
+		if _session_spectator_iff >= 0 and int(st.get("iff", -1)) != _session_spectator_iff:
+			continue
 		if st.get("is_player", false) or not st.get("is_alive", true):
 			continue
 		if int(st.get("iff", -1)) != player_iff:
@@ -750,6 +757,8 @@ func _other_keys(airplanes: Dictionary, player_iff: int) -> Array:
 # The locked target key: kept until the user steps (Tab / [ ] / the same F-key again). The first one is
 # picked automatically only when nothing was chosen yet.
 func _locked_target(for_mode: int, key: int, airplanes: Dictionary, player_iff: int) -> int:
+	if _session_spectator_iff >= 0 and (not airplanes.has(key) or int(airplanes[key].get("iff", -1)) != _session_spectator_iff):
+		key = -1
 	var step: int = _pending_step.get(for_mode, 0)
 	_pending_step.erase(for_mode)
 	if step == 0 and key >= 0:
@@ -761,6 +770,17 @@ func _locked_target(for_mode: int, key: int, airplanes: Dictionary, player_iff: 
 	if i < 0:
 		return keys[0] if step >= 0 else keys[keys.size() - 1]
 	return keys[(i + step + keys.size()) % keys.size()]
+
+# Offline roster targets stay on the chosen team; command-line spectator behavior is preserved.
+func set_session_spectator(enabled: bool, iff: int, target_key: int = -1) -> void:
+	_dragging = false
+	_session_spectator_iff = iff if enabled else -1
+	_spectator_input = enabled or _launch_spectator
+	_player_input = not enabled and _launch_player
+	set_process_unhandled_input(true)
+	if enabled:
+		set_mode(CamMode.SPECTATOR_AI)
+		_spectator_key = target_key
 
 func _side_name(st: Dictionary, player_iff: int) -> String:
 	return "BANDIT" if int(st.get("iff", -1)) != player_iff else "ALLY"

@@ -22,6 +22,7 @@ const NAMES := ["BOB", "JIM", "TIM", "SAM", "MAX", "LEO", "RAY", "KAI", "ZED", "
 static func defaults() -> Dictionary:
 	return {
 		"version": 1,
+		"team_size": 8,
 		"map": MAPS[0]["id"],
 		"player_team": "blue",
 		"player_name": "PLAYER",
@@ -39,6 +40,7 @@ static func validated(cfg: Dictionary) -> Dictionary:
 		if cfg.has(k):
 			out[k] = cfg[k]
 	out["duration_min"] = clampi(int(out["duration_min"]), MIN_MINUTES, MAX_MINUTES)
+	out["team_size"] = 16 if int(out["team_size"]) == 16 else 8
 	out["player_team"] = "red" if str(out["player_team"]) == "red" else "blue"
 	var rules: Dictionary = defaults()["rules"]
 	if out["rules"] is Dictionary:
@@ -77,6 +79,31 @@ static func count(cfg: Dictionary, team: String) -> int:
 		if p["team"] == team:
 			n += 1
 	return n
+
+# Setup stores a complete side; the lobby replaces one slot with the human after team choice.
+static func fit_team_sizes(cfg: Dictionary, catalog: Array) -> void:
+	var target := int(cfg.get("team_size", 8))
+	var kept: Array = []
+	var counts := {"blue": 0, "red": 0}
+	for pilot in cfg["pilots"]:
+		var team: String = pilot["team"]
+		if counts[team] < target and role_of(catalog, pilot["aircraft"]) != "?":
+			kept.append(pilot)
+			counts[team] += 1
+	cfg["pilots"] = kept
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12345
+	for team in ["blue", "red"]:
+		fill(cfg, catalog, team, target - count(cfg, team), "", rng)
+
+static func with_human_slot(cfg: Dictionary, team: String) -> Dictionary:
+	var match_config := cfg.duplicate(true)
+	match_config["player_team"] = team
+	for i in range(match_config["pilots"].size() - 1, -1, -1):
+		if match_config["pilots"][i]["team"] == team:
+			match_config["pilots"].remove_at(i)
+			break
+	return match_config
 
 # A name not used yet in this event (placeholder list, then numbered).
 static func free_name(cfg: Dictionary, rng: RandomNumberGenerator) -> String:

@@ -46,7 +46,7 @@ func setup(p_team: String, p_cfg: Dictionary, p_catalog: Array, p_rng: RandomNum
 	tools.add_child(Kit.button("+ ADD", "", _add_one))
 	_fill_n = SpinBox.new()
 	_fill_n.min_value = 1
-	_fill_n.max_value = EventConfig.MAX_PER_SIDE
+	_fill_n.max_value = int(cfg.get("team_size", 8))
 	_fill_n.value = 8
 	tools.add_child(_fill_n)
 	_fill_role = Kit.options(ROLES, 1)
@@ -81,7 +81,8 @@ func refresh() -> void:
 		if p["team"] == team:
 			_list.add_child(_row(p))
 			n += 1
-	_count.text = "%d / %d" % [n, EventConfig.MAX_PER_SIDE]
+	_count.text = "%d / %d" % [n, int(cfg.get("team_size", 8))]
+	_fill_n.max_value = int(cfg.get("team_size", 8))
 	if n == 0:
 		_list.add_child(Kit.label("NO AI PILOTS", "DimLabel"))
 
@@ -112,10 +113,10 @@ func _row(pilot: Dictionary) -> Control:
 	return h
 
 func _add_one() -> void:
-	EventConfig.fill(cfg, catalog, team, 1, "MULTIROLE", rng)
+	EventConfig.fill(cfg, catalog, team, mini(1, int(cfg.get("team_size", 8)) - EventConfig.count(cfg, team)), "MULTIROLE", rng)
 	changed.emit()
 
 func _fill() -> void:
 	var role: String = ROLES[_fill_role.selected]
-	EventConfig.fill(cfg, catalog, team, int(_fill_n.value), "" if role == "ANY" else role, rng)
+	EventConfig.fill(cfg, catalog, team, mini(int(_fill_n.value), int(cfg.get("team_size", 8)) - EventConfig.count(cfg, team)), "" if role == "ANY" else role, rng)
 	changed.emit()

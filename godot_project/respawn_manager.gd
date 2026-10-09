@@ -1,6 +1,6 @@
 extends Node
 # Respawn + flight setup for the classic free play (command-line modes; events and free flight use
-# ui/spawn_menu.gd)
+# ui/preflight_flow.gd)
 # - Automatic respawn: RESPAWN_DELAY seconds after the player dies, a new aircraft of the selected type is
 #   placed at a start position (.stp) of the selected team: "Random" picks any [IFF1]/[IFF4] start of that
 #   team, skipping "(HELI ONLY)" spots for fixed-wing aircraft. Disabled in benchmark mode so benchmark
@@ -98,7 +98,7 @@ func _input(event: InputEvent) -> void:
 		_set_panel_visible(not _layer.visible)
 		get_viewport().set_input_as_handled()
 
-# Events and free flight spawn the player from their own menu (ui/spawn_menu.gd)
+# Events and Free Flight spawn the player through ui/preflight_flow.gd.
 func _menus_spawn() -> bool:
 	return bool(main.get("event_mode")) or bool(main.get("free_flight_mode"))
 

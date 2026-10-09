@@ -2,7 +2,7 @@ extends RefCounted
 
 # Writes the YSFlight mission (.yfs) for an offline event: only the map and the weapon rules. It has no
 # aircraft: the event spawns its AI pilots in the air from the config (sim/event_match.cpp) and the player picks
-# a jet in the spawn menu (ui/spawn_menu.gd).
+# a jet in the pre-flight hangar (ui/preflight_flow.gd).
 
 const MISSION_PATH := "user://rvb_event_mission.yfs"
 

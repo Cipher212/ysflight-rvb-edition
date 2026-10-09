@@ -35,6 +35,7 @@ func _load_catalog() -> void:
 	# Drop pilots whose aircraft this install doesn't have
 	cfg["pilots"] = cfg["pilots"].filter(func(p): return EventConfig.role_of(catalog, p["aircraft"]) != "?")
 	_loading.queue_free()
+	EventConfig.fit_team_sizes(cfg, catalog)
 	_build()
 
 func _build() -> void:
@@ -77,10 +78,16 @@ func _build_settings(parent: Control) -> void:
 	var map_opt := Kit.options(maps)
 	map_opt.item_selected.connect(func(i: int) -> void: cfg["map"] = EventConfig.MAPS[i]["id"])
 	Kit.row(box, "MAP", map_opt)
+	var size_opt := Kit.options(["8 vs 8", "16 vs 16"], 1 if cfg["team_size"] == 16 else 0)
+	size_opt.item_selected.connect(func(i: int) -> void:
+		cfg["team_size"] = 16 if i == 1 else 8
+		EventConfig.fit_team_sizes(cfg, catalog)
+		_refresh_rosters())
+	Kit.row(box, "PILOTS PER SIDE", size_opt)
 
 	var team_opt := Kit.options(["BLUE", "RED"], 1 if cfg["player_team"] == "red" else 0)
 	team_opt.item_selected.connect(func(i: int) -> void: cfg["player_team"] = "red" if i == 1 else "blue")
-	Kit.row(box, "YOUR TEAM", team_opt)
+	Kit.row(box, "PREFERRED TEAM", team_opt)
 
 	var callsign := LineEdit.new()
 	callsign.text = cfg["player_name"]
@@ -117,11 +124,11 @@ func _build_settings(parent: Control) -> void:
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	box.add_child(spacer)
-	box.add_child(Kit.label("AIR STARTS ONLY: THE AI CANNOT TAKE OFF YET", "DimLabel"))
+	box.add_child(Kit.label("YOU REPLACE ONE AI ON YOUR CHOSEN SIDE", "DimLabel"))
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 10)
 	box.add_child(buttons)
-	var fly := Kit.button("FLY", "RedButton", _fly)
+	var fly := Kit.button("OPEN LOBBY", "RedButton", _fly)
 	fly.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	buttons.add_child(fly)
 	buttons.add_child(Kit.button("BACK", "", func() -> void: get_tree().change_scene_to_file(HOME_SCENE)))
@@ -131,6 +138,7 @@ func _refresh_rosters() -> void:
 		r.refresh()
 
 func _fly() -> void:
+	EventConfig.fit_team_sizes(cfg, catalog)
 	EventConfig.save(cfg)
 	AppState.mode = "event"
 	var map_label: String = str(cfg["map"]).replace("[RVB]", "")
