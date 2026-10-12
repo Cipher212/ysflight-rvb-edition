@@ -27,10 +27,18 @@ func _init() -> void:
 	_setup_buses()
 
 func _setup_buses() -> void:
+	# These category buses also exist in muted benchmark runs without AudioVolume.
+	_get_or_create_bus("VolEngines")
+	_get_or_create_bus("VolEffects")
+	_get_or_create_bus("VolWarnings")
 	_player_bus_idx = _get_or_create_bus("PlayerEngine")
 	_others_bus_idx = _get_or_create_bus("Others")
 	_effects_bus_idx = _get_or_create_bus("Effects")
 	_cockpit_bus_idx = _get_or_create_bus("Cockpit")
+	AudioServer.set_bus_send(_player_bus_idx, "VolEngines")
+	AudioServer.set_bus_send(_others_bus_idx, "VolEngines")
+	AudioServer.set_bus_send(_effects_bus_idx, "VolEffects")
+	AudioServer.set_bus_send(_cockpit_bus_idx, "VolWarnings")
 
 	_player_lpf_idx = _ensure_low_pass_filter(_player_bus_idx, PLAYER_LPF_CUTOFF_HZ)
 	_others_lpf_idx = _ensure_low_pass_filter(_others_bus_idx, DEFAULT_LPF_CUTOFF_HZ)

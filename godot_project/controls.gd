@@ -343,6 +343,13 @@ func _on_action_pressed(action: String) -> void:
 		var cur_dbg: bool = bool(get_value("show_debug_text", false))
 		set_value("show_debug_text", not cur_dbg)
 		return
+	elif action == "toggle_scoreboard":
+		# Toggle in-game or replay tactical scoreboard (Ref: planning/replay_and_spectator_system.md)
+		if main != null and main.has_node("Scoreboard"):
+			var sb = main.get_node("Scoreboard")
+			if sb != null and sb.has_method("toggle_scoreboard"):
+				sb.toggle_scoreboard()
+		return
 
 	# In AI player mode (spectator / benchmark), controls send no flight or weapon inputs
 	if main != null and main.get("ai_player_mode") == true:
@@ -756,3 +763,18 @@ func _physics_process(delta: float) -> void:
 
 	# Clear edge triggers after physics tick consumption
 	_action_just_pressed.clear()
+
+# ==============================================================================
+# Replay Management Helpers (Ref: planning/replay_and_spectator_system.md)
+# ==============================================================================
+func get_replay_directory() -> String:
+	var custom_dir: String = str(get_value("replay_directory", "")).strip_edges()
+	if not custom_dir.is_empty():
+		return custom_dir
+	var doc_dir: String = OS.get_system_dir(OS.SYSTEM_DIR_DOCUMENTS)
+	if doc_dir.is_empty():
+		doc_dir = OS.get_user_data_dir()
+	return doc_dir.path_join("YSFlight Replays")
+
+func is_autosave_replays_enabled() -> bool:
+	return bool(get_value("autosave_replays", false))

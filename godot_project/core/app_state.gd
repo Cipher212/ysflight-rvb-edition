@@ -5,3 +5,8 @@ extends RefCounted
 # offline RvB event from user://rvb_event.json (core/event_config.gd); "free_flight" = Home > FREE FLIGHT.
 
 static var mode := "free"
+
+# Replay session caches (Ref: planning/replay_and_spectator_system.md)
+static var last_replay_data: Dictionary = {}
+static var last_replay_path: String = ""
+static var spectating_replay_path: String = ""

@@ -43,6 +43,13 @@ const CATEGORIES: Array[Dictionary] = [
 			{"id": "hud", "label": "HUD"},
 			{"id": "radar", "label": "RADAR"}
 		]
+	},
+	{
+		"id": "gameplay",
+		"label": "GAMEPLAY",
+		"pages": [
+			{"id": "gameplay", "label": "GAMEPLAY"}
+		]
 	}
 ]
 
@@ -59,7 +66,9 @@ const SECTION_TO_PAGE: Dictionary = {
 	"Graphics": "graphics",
 	"Audio": "audio",
 	"HUD": "hud",
-	"Radar": "radar"
+	"Radar": "radar",
+	"Gameplay": "gameplay",
+	"Replays": "gameplay"
 }
 
 var controls: Node = null
@@ -78,6 +87,7 @@ var _current_subpage: String = ""
 var _float_widgets: Dictionary = {}
 var _bool_widgets: Dictionary = {}
 var _enum_widgets: Dictionary = {}
+var _path_widgets: Dictionary = {}
 var _binding_buttons: Dictionary = {}
 var _conflict_labels: Dictionary = {}
 var _listening_slot: Dictionary = {}
@@ -323,6 +333,45 @@ func _add_setting_row(page: VBoxContainer, s: Dictionary) -> void:
 			opt.item_selected.connect(func(idx: int) -> void: controls.set_value(key, str(options[idx])))
 			_enum_widgets[key] = {"button": opt, "options": options}
 			Kit.row(page, label_text, opt, KEY_WIDTH)
+		"string", "path":
+			# Text and filesystem directory selection (Ref: planning/replay_and_spectator_system.md)
+			var val: String = str(controls.get_value(key, s.get("default", "")))
+			var h := HBoxContainer.new()
+			h.add_theme_constant_override("separation", 10)
+			var field := LineEdit.new()
+			field.text = val
+			field.placeholder_text = str(s.get("placeholder", ""))
+			field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			h.add_child(field)
+			var commit := func(_t: String = "") -> void:
+				controls.set_value(key, field.text.strip_edges())
+			field.text_submitted.connect(commit)
+			field.focus_exited.connect(commit)
+			if s.get("type") == "path":
+				var browse_btn := Kit.button("BROWSE...", "", func() -> void:
+					var dialog := FileDialog.new()
+					dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+					dialog.access = FileDialog.ACCESS_FILESYSTEM
+					dialog.use_native_dialog = true
+					dialog.dir_selected.connect(func(dir: String) -> void:
+						field.text = dir
+						controls.set_value(key, dir)
+						dialog.queue_free())
+					dialog.canceled.connect(func() -> void:
+						dialog.queue_free())
+					page.add_child(dialog)
+					dialog.popup_centered_ratio(0.7)
+				)
+				browse_btn.custom_minimum_size = Vector2(100, 32)
+				h.add_child(browse_btn)
+			var reset_btn := Kit.button("DEFAULT", "", func() -> void:
+				field.text = ""
+				controls.set_value(key, "")
+			)
+			reset_btn.custom_minimum_size = Vector2(90, 32)
+			h.add_child(reset_btn)
+			_path_widgets[key] = {"field": field}
+			Kit.row(page, label_text, h, KEY_WIDTH)
 		"binding":
 			var v := VBoxContainer.new()
 			var h := HBoxContainer.new()
@@ -484,8 +533,12 @@ func _on_controls_changed(changed_key: String) -> void:
 		for key in _enum_widgets:
 			var w: Dictionary = _enum_widgets[key]
 			w["button"].select(maxi(w["options"].find(str(controls.get_value(key, ""))), 0))
+		for key in _path_widgets:
+			_path_widgets[key]["field"].text = str(controls.get_value(key, ""))
 		for slot_key in _binding_buttons:
 			_binding_buttons[slot_key].text = _binding_text(slot_key)
+	elif _path_widgets.has(changed_key):
+		_path_widgets[changed_key]["field"].text = str(controls.get_value(changed_key, ""))
 	elif _binding_buttons.has(changed_key):
 		_binding_buttons[changed_key].text = _binding_text(changed_key)
 	_update_conflict_warnings()

@@ -32,6 +32,7 @@ const CrashFXScript = preload("res://fx/crash_fx.gd")
 const DeathFXScript = preload("res://fx/death_fx.gd")
 const DebugOverlayScript = preload("res://ui/debug_overlay.gd")
 const FpsMonitorScript = preload("res://ui/fps_monitor.gd")
+const GameMessagesScript = preload("res://ui/game_messages.gd")
 const PerfLogScript = preload("res://core/perf_log.gd")
 const TestRunnerScript = preload("res://tests/test_runner.gd")
 const AiSoakScript = preload("res://tests/ai_soak.gd")
@@ -52,6 +53,9 @@ const SunGlareScript = preload("res://fx/sun_glare.gd")
 const BlastGlowScript = preload("res://fx/blast_glow.gd")
 const LowCloudLayerScript = preload("res://world/low_cloud_layer.gd")
 const CockpitMFDScript = preload("res://ui/cockpit/cockpit_mfd.gd")
+# Replay and Scoreboard Subsystems (Ref: planning/replay_and_spectator_system.md)
+const ScoreboardScript = preload("res://ui/scoreboard.gd")
+const ReplayRecorderScript = preload("res://core/replay_recorder.gd")
 
 const MISSION := "res://mission/luavi_16v16.yfs"
 const BENCHMARK_SEED := 12345
@@ -236,6 +240,10 @@ func _ready() -> void:
 	controls_overlay.name = "ControlsOverlay"
 	hud_layer.add_child(controls_overlay)
 	controls_overlay.setup(self, controls)
+	var game_messages: Control = GameMessagesScript.new()
+	game_messages.name = "GameMessages"
+	hud_layer.add_child(game_messages)
+	game_messages.setup(ysflight_sim, controls)
 
 	var graphics_settings: Node = GraphicsSettingsScript.new()
 	graphics_settings.name = "GraphicsSettings"
@@ -259,6 +267,19 @@ func _ready() -> void:
 	settings_panel.name = "SettingsPanel"
 	add_child(settings_panel)
 	settings_panel.setup(controls)
+
+	# Tactical Scoreboard & Telemetry Recorder (Ref: planning/replay_and_spectator_system.md)
+	# Active during player flights, events, and free flights; omitted during automated test/benchmark runs.
+	if not (test_mode or benchmark_mode or soak_i >= 0 or arrival_i >= 0):
+		var scoreboard: CanvasLayer = ScoreboardScript.new()
+		scoreboard.name = "Scoreboard"
+		add_child(scoreboard)
+		scoreboard.setup_live(self, ysflight_sim)
+
+		var recorder: Node = ReplayRecorderScript.new()
+		recorder.name = "ReplayRecorder"
+		add_child(recorder)
+		recorder.setup(self, ysflight_sim, event_config if event_mode else {"map": "LUAVI", "player_name": "PLAYER", "player_team": "blue"})
 
 	ysflight_sim.render_origin_shifted.connect(_on_render_origin_shifted)
 	_on_render_origin_shifted(Vector3.ZERO) # place the absolute-space effects for the starting origin

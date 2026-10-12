@@ -18,6 +18,7 @@ var _preset_options: OptionButton
 var _preset_name: LineEdit
 var _notice: Label
 var _options: Array = []
+var _display_stations: Array = []
 var _syncing := false
 
 func _ready() -> void:
@@ -26,7 +27,7 @@ func _ready() -> void:
 	add_child(Kit.label("SELECT A STATION BELOW TO INSPECT ITS LOADOUT", "DimLabel"))
 	_stations = ItemList.new()
 	_stations.custom_minimum_size.y = 195
-	_stations.item_selected.connect(select_station)
+	_stations.item_selected.connect(_on_station_selected)
 	add_child(_stations)
 	_selected_title = Kit.label("", "SectionLabel")
 	add_child(_selected_title)
@@ -78,18 +79,103 @@ func bind_model(value: RefCounted) -> void:
 	_syncing = true
 	_fuel.value = model.fuel
 	_syncing = false
+	_build_display_stations()
 	_refresh_stations()
 	_refresh_presets()
-	select_station(model.selected, false)
+	var initial_station := 0
+	if not _display_stations.is_empty():
+		initial_station = int(_display_stations[0]["station"])
+	select_station(initial_station, false)
 	_update_stats()
+
+func _build_display_stations() -> void:
+	_display_stations.clear()
+	if model == null or model.points.is_empty():
+		return
+	var seen: Dictionary = {}
+	var belly_candidates: Array = []
+	var wing_candidates: Array = []
+	for i in model.points.size():
+		if seen.has(i):
+			continue
+		var point: Dictionary = model.points[i]
+		var mirror := int(point.get("mirror", -1))
+		var pos: Vector3 = point.get("position", Vector3.ZERO)
+		if mirror >= 0 and mirror < model.points.size() and mirror != i:
+			seen[i] = true
+			seen[mirror] = true
+			var canonical: int = i if pos.x <= 0.0 else mirror
+			wing_candidates.append({
+				"station": canonical,
+				"mirror": mirror if canonical == i else i,
+				"position": model.points[canonical].get("position", Vector3.ZERO),
+				"original_index": mini(i, mirror)
+			})
+		else:
+			seen[i] = true
+			if absf(pos.x) < 0.2:
+				belly_candidates.append({
+					"station": i,
+					"mirror": -1,
+					"position": pos,
+					"original_index": i
+				})
+			else:
+				wing_candidates.append({
+					"station": i,
+					"mirror": -1,
+					"position": pos,
+					"original_index": i
+				})
+
+	belly_candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["original_index"] < b["original_index"])
+
+	wing_candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ax: float = absf(a["position"].x)
+		var bx: float = absf(b["position"].x)
+		if absf(ax - bx) > 0.05:
+			return ax < bx
+		return a["original_index"] < b["original_index"])
+
+	for b_idx in belly_candidates.size():
+		var entry: Dictionary = belly_candidates[b_idx]
+		var label: String = "BELLY" if belly_candidates.size() == 1 else "BELLY %d" % (b_idx + 1)
+		entry["label"] = label
+		entry["is_belly"] = true
+		_display_stations.append(entry)
+
+	for w_idx in wing_candidates.size():
+		var entry: Dictionary = wing_candidates[w_idx]
+		entry["label"] = "STATION %d" % (w_idx + 1)
+		entry["is_belly"] = false
+		_display_stations.append(entry)
+
+func _row_for_station(raw_station: int) -> int:
+	for i in _display_stations.size():
+		var entry: Dictionary = _display_stations[i]
+		if entry["station"] == raw_station or int(entry.get("mirror", -1)) == raw_station:
+			return i
+	return 0 if not _display_stations.is_empty() else -1
 
 func _refresh_stations() -> void:
 	_stations.clear()
-	for i in model.slots.size():
-		var slot: Dictionary = model.slots[i]
-		_stations.add_item("%02d   %s%s" % [i + 1, slot["weapon"], "  x%d" % int(slot["count"]) if int(slot["count"]) > 0 else ""])
-	if model.selected < _stations.item_count:
-		_stations.select(model.selected)
+	for i in _display_stations.size():
+		var entry: Dictionary = _display_stations[i]
+		var raw_idx: int = entry["station"]
+		var slot: Dictionary = model.slots[raw_idx] if raw_idx < model.slots.size() else {}
+		var weapon: String = str(slot.get("weapon", "EMPTY"))
+		var count_val: int = int(slot.get("count", 0))
+		var count_str := "  x%d" % count_val if count_val > 0 else ""
+		var text: String = "%s   %s%s" % [str(entry["label"]).rpad(12), weapon, count_str]
+		_stations.add_item(text)
+	var active_row := _row_for_station(model.selected if model != null else 0)
+	if active_row >= 0 and active_row < _stations.item_count:
+		_stations.select(active_row)
+
+func _on_station_selected(row: int) -> void:
+	if row >= 0 and row < _display_stations.size():
+		select_station(int(_display_stations[row]["station"]), true)
 
 func select_station(index: int, focus_camera: bool = true) -> void:
 	if model == null or model.slots.is_empty():
@@ -98,11 +184,12 @@ func select_station(index: int, focus_camera: bool = true) -> void:
 		_selected_title.text = "NO EDITABLE STATIONS"
 		return
 	model.selected = clampi(index, 0, model.slots.size() - 1)
-	_stations.select(model.selected)
-	var mirror := int(model.points[model.selected]["mirror"])
-	_selected_title.text = "STATION %02d" % (model.selected + 1)
-	if mirror >= 0:
-		_selected_title.text += " + %02d  /  SYMMETRIC" % (mirror + 1)
+	var active_row := _row_for_station(model.selected)
+	if active_row >= 0 and active_row < _display_stations.size():
+		_stations.select(active_row)
+		_selected_title.text = str(_display_stations[active_row]["label"])
+	else:
+		_selected_title.text = "STATION %d" % (model.selected + 1)
 	_options = model.options(model.selected)
 	_weapon.clear()
 	var slot: Dictionary = model.slots[model.selected]

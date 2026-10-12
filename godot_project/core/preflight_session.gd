@@ -145,6 +145,14 @@ func open_settings() -> void:
 	main.controls.toggle_settings(not is_event)
 
 func end_session() -> void:
+	# Archive replay session & check autosave for Free Flight / Preflight (Ref: planning/replay_and_spectator_system.md)
+	if main != null and main.has_node("ReplayRecorder"):
+		var rec = main.get_node("ReplayRecorder")
+		if rec != null:
+			var AppState := preload("res://core/app_state.gd")
+			AppState.last_replay_data = rec.finalize_recording()
+			var autosaved: String = rec.check_and_autosave(main.controls)
+			AppState.last_replay_path = autosaved
 	main.controls.open_settings_handler = Callable()
 	get_tree().paused = false
 	get_tree().change_scene_to_file.call_deferred(HOME_SCENE)

@@ -157,3 +157,9 @@ func world_angle(yaw_deg: float, pitch_deg: float) -> Vector2:
 
 func optical_scale() -> float:
 	return _scale
+
+func focal_length() -> float:
+	return _focal.y
+
+func optical_center() -> Vector2:
+	return _center

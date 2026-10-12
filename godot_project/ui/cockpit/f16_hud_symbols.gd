@@ -71,13 +71,16 @@ func _flight() -> void:
 	_text_screen(Vector2(rx - 30.0 * _scale, hud.screen_pos(0.0, 0.60).y), "R%d" % int(round(float(tel.get("agl_m", 0.0)) * 3.28084)), false, 0.95)
 	_text_screen(Vector2(rx - 30.0 * _scale, hud.screen_pos(0.0, 0.69).y), "%+.0f" % float(tel.get("vsi_fpm", 0.0)), false, 0.95)
 
-	# 4. Center: Boresight Reference Cross
-	_line(hc - Vector2(10.0, 0) * _scale, hc - Vector2(3.0, 0) * _scale)
-	_line(hc + Vector2(3.0, 0) * _scale, hc + Vector2(10.0, 0) * _scale)
-	_line(hc - Vector2(0, 10.0) * _scale, hc - Vector2(0, 3.0) * _scale)
-	_line(hc + Vector2(0, 3.0) * _scale, hc + Vector2(0, 10.0) * _scale)
+	# 4. Center: Boresight Reference Cross (Waterline)
+	var b_sp: Vector2 = hud.project_direction(-hud.aircraft.basis.z)
+	if b_sp.x > -50000.0:
+		_line(b_sp - Vector2(10.0, 0.0) * _scale, b_sp - Vector2(3.0, 0.0) * _scale)
+		_line(b_sp + Vector2(3.0, 0.0) * _scale, b_sp + Vector2(10.0, 0.0) * _scale)
+		_line(b_sp - Vector2(0.0, 10.0) * _scale, b_sp - Vector2(0.0, 3.0) * _scale)
+		_line(b_sp + Vector2(0.0, 3.0) * _scale, b_sp + Vector2(0.0, 10.0) * _scale)
+		draw_circle(b_sp, maxf(1.0, 1.5 * _scale), GREEN)
 
-	# 5. Pitch Ladder (Conformal to World Horizon)
+	# 5. Flight Path Marker (Velocity Vector)
 	var cam_fwd: Vector3 = -hud.camera.global_transform.basis.z
 	var cam_up: Vector3 = hud.camera.global_transform.basis.y
 	var cam_right: Vector3 = hud.camera.global_transform.basis.x
@@ -86,15 +89,49 @@ func _flight() -> void:
 	var theta_roll: float = atan2(up_screen.x, -up_screen.y)
 	var ladder_up := Vector2(sin(theta_roll), -cos(theta_roll))
 	var ladder_right := Vector2(cos(theta_roll), sin(theta_roll))
-	var px_per_deg: float = hs.y / 28.0
 
-	var current_pitch := float(tel.get("pitch_deg", 0.0))
-	var start := int(floor(current_pitch / 5.0)) * 5
-	for pitch in range(start - 10, start + 11, 5):
-		if pitch < -85 or pitch > 85 or absf(pitch - current_pitch) > 12.0: continue
-		var d_px: float = (float(pitch) - cam_pitch_deg) * px_per_deg
-		var rung_ctr: Vector2 = hc + ladder_up * (-d_px)
-		if not Geometry2D.is_point_in_polygon(rung_ctr, hud.aperture): continue
+	var vel_raw: Vector3 = tel.get("velocity", Vector3.ZERO)
+	var vel_speed: float = vel_raw.length()
+	# In flight, use the true aerodynamic velocity vector (matching flight course and rocket trajectory).
+	# When stopped or taxiing at very low speed, park at aircraft boresight.
+	var fpm_dir: Vector3 = vel_raw.normalized() if vel_speed >= 10.0 else -hud.aircraft.basis.z
+	var fpm_p: Vector2 = hud.project_direction(fpm_dir)
+	var has_fpm: bool = (fpm_p.x > -50000.0)
+	var caged_fpm := false
+	var draw_fpm_p := fpm_p
+
+	if has_fpm:
+		if not Geometry2D.is_point_in_polygon(fpm_p, hud.aperture):
+			caged_fpm = true
+			var ray: Vector2 = (fpm_p - hc).normalized()
+			var n: int = hud.aperture.size()
+			for i in range(n):
+				var p1: Vector2 = hud.aperture[i]
+				var p2: Vector2 = hud.aperture[(i + 1) % n]
+				var hit = Geometry2D.segment_intersects_segment(hc, hc + ray * 5000.0, p1, p2)
+				if hit != null:
+					draw_fpm_p = (hit as Vector2) - ray * (8.0 * _scale)
+					break
+		_circle(draw_fpm_p, 4.5)
+		_line(draw_fpm_p - ladder_right * (10.0 * _scale), draw_fpm_p - ladder_right * (4.5 * _scale))
+		_line(draw_fpm_p + ladder_right * (4.5 * _scale), draw_fpm_p + ladder_right * (10.0 * _scale))
+		_line(draw_fpm_p + ladder_up * (4.5 * _scale), draw_fpm_p + ladder_up * (9.0 * _scale))
+		if caged_fpm:
+			var cx := 2.5 * _scale
+			_line(draw_fpm_p - Vector2(cx, cx), draw_fpm_p + Vector2(cx, cx))
+			_line(draw_fpm_p + Vector2(-cx, cx), draw_fpm_p + Vector2(cx, -cx))
+
+	# 6. Pitch Ladder (Conformal to World Horizon, roll/pitch stabilized on aircraft centerline)
+	var focal_len: float = hud.focal_length()
+	var ladder_center: Vector2 = b_sp if b_sp.x > -50000.0 else hud.optical_center()
+
+	var start := int(floor(cam_pitch_deg / 5.0)) * 5
+	for pitch in range(start - 15, start + 16, 5):
+		if pitch < -85 or pitch > 85: continue
+		var delta_p: float = float(pitch) - cam_pitch_deg
+		if absf(delta_p) > 20.0: continue
+		var d_px: float = focal_len * tan(deg_to_rad(delta_p))
+		var rung_ctr: Vector2 = ladder_center + ladder_up * d_px
 		
 		for side: float in [-1.0, 1.0]:
 			var arm_len: float = (35.0 if pitch == 0 else 20.0) * _scale
@@ -114,15 +151,6 @@ func _flight() -> void:
 				_line(p_outer, p_outer + tick_dir)
 				_text_screen(p_outer + ladder_right * (7.0 * side * _scale) - ladder_up * 3.0, str(absi(pitch)), true, 0.8)
 
-	# 6. Flight Path Marker (Velocity Vector)
-	var velocity: Vector3 = tel.get("ground_velocity", tel.get("velocity", Vector3.ZERO))
-	if velocity.length_squared() > 1.0:
-		var p: Vector2 = hud.project_direction(velocity)
-		if Geometry2D.is_point_in_polygon(p, hud.aperture):
-			_circle(p, 4.5)
-			_line(p + Vector2(-10, 0) * _scale, p + Vector2(-4.5, 0) * _scale)
-			_line(p + Vector2(4.5, 0) * _scale, p + Vector2(10, 0) * _scale)
-			_line(p + Vector2(0, -4.5) * _scale, p + Vector2(0, -9) * _scale)
 
 func _weapons() -> void:
 	var tel: Dictionary = hud.telemetry

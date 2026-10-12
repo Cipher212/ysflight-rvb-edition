@@ -136,3 +136,5 @@ WPNSHAPE RKT STATIC user/matrix_v2/weapon/ub32.srf
 WPNSHAPE FLR FLYING user/matrix_v2/weapon/flare.srf
 WPNSHAPE FLR FLYING user/RvB/weapon/flr.srf
 AUTOCALC
+MAXNMFLR 100
+LOADWEPN IFLR 100

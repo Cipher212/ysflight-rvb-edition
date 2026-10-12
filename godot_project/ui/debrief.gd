@@ -6,6 +6,8 @@ extends Control
 const Kit := preload("res://ui/ui_kit.gd")
 const Results := preload("res://core/event_results.gd")
 const AppState := preload("res://core/app_state.gd")
+# Replay manager for saving post-match flight logs (Ref: planning/replay_and_spectator_system.md)
+const ReplayManager := preload("res://core/replay_manager.gd")
 const HOME_SCENE := "res://ui/home.tscn"
 const MARGIN := 40
 const COLUMNS := ["PILOT", "AIRCRAFT", "ROLE", "AIR", "GND", "DEATHS", "HITS"]
@@ -136,8 +138,27 @@ func _build_buttons(page: Control) -> void:
 	row.add_child(Kit.button("EXPORT CSV", "BlueButton", func() -> void:
 		var path := Results.export_csv(results)
 		_export_label.text = ("SAVED: " + path) if path != "" else "EXPORT FAILED"))
+
+	# Save Replay button (Ref: planning/replay_and_spectator_system.md)
+	var save_replay_btn := Kit.button("SAVE REPLAY", "BlueButton", func() -> void:
+		if not AppState.last_replay_data.is_empty():
+			var p := ReplayManager.save_replay(AppState.last_replay_data)
+			if not p.is_empty():
+				AppState.last_replay_path = p
+				_export_label.text = "REPLAY SAVED: " + p
+			else:
+				_export_label.text = "SAVE REPLAY FAILED"
+		elif not AppState.last_replay_path.is_empty():
+			_export_label.text = "ALREADY SAVED: " + AppState.last_replay_path
+		else:
+			_export_label.text = "NO REPLAY DATA RECORDED"
+	)
+	row.add_child(save_replay_btn)
+
 	row.add_child(Kit.button("BACK TO MENU", "RedButton", func() -> void:
 		get_tree().change_scene_to_file(HOME_SCENE)))
 	_export_label = Kit.label("", "DimLabel")
 	_export_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if not AppState.last_replay_path.is_empty():
+		_export_label.text = "AUTOSAVED: " + AppState.last_replay_path
 	row.add_child(_export_label)

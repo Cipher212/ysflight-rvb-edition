@@ -219,17 +219,22 @@ func _test_missile() -> void:
 		old_life[weapon["slot_id"]] = weapon["life_remain"]
 	_inject["fire_once"] = true
 	var missile_ribbon := false
+	var rendered := DisplayServer.get_name() != "headless"
 	# Other jets' smoke can expire as ours starts. Check the new missile's ribbon
 	# endpoints in the renderer, rather than requiring a rise in the whole-scene total.
 	for frame in 30:
 		await get_tree().process_frame
-		missile_ribbon = missile_ribbon or _new_missile_ribbon(picked, old_life)
+		if rendered:
+			missile_ribbon = missile_ribbon or _new_missile_ribbon(picked, old_life)
 	var after: int = int(sim.get_player_telemetry().get(count_key, 0))
 	var trails1: int = sim.get_effects_stats()[1]
 	await _seconds(1.0)
 	await _shot("03_missile_trail")
 	_check("missile fired", after < before, "%s %d -> %d" % [count_key, before, after])
-	_check("missile smoke trail started", missile_ribbon, "new missile ribbon %s; scene %d -> %d trails" % [missile_ribbon, trails0, trails1])
+	# The dummy headless renderer returns empty MultiMesh buffers and identity transforms.
+	# Keep actual ribbon readback in the rendered gate; headless still verifies the launch.
+	if rendered:
+		_check("missile smoke trail started", missile_ribbon, "new missile ribbon %s; scene %d -> %d trails" % [missile_ribbon, trails0, trails1])
 	sim.select_weapon(WPN_GUN)
 
 func _new_missile_ribbon(picked: int, old_life: Dictionary) -> bool:
@@ -347,7 +352,7 @@ func _test_audio() -> void:
 			n += 1
 	_check("audio players created", n > 0, "%d players" % n)
 	var sounds = main.audio_manager._sounds
-	_check("sounds loaded", sounds.engine0 != null and sounds.missile != null and sounds.lock_beep != null, "")
+	_check("sounds loaded", sounds.engine_bands.size() == 10 and sounds.engine_bands[0] != null and sounds.missile != null and sounds.lock_on != null and sounds.incoming_near != null, "")
 
 func _test_shoot_down_and_respawn() -> void:
 	var old_key := _player_key()

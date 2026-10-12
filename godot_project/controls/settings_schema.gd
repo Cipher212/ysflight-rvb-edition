@@ -623,6 +623,25 @@ const SETTINGS: Array[Dictionary] = [
 		"options": ["All", "Air Only", "Ground Only"]
 	},
 
+	# --- Gameplay & Replays ---
+	# Configures automatic replay archiving and target storage path.
+	# Full specification documented in: planning/replay_and_spectator_system.md
+	{
+		"key": "autosave_replays",
+		"label": "Autosave Replays",
+		"section": "Gameplay",
+		"type": "bool",
+		"default": false
+	},
+	{
+		"key": "replay_directory",
+		"label": "Replay Directory",
+		"section": "Gameplay",
+		"type": "path",
+		"default": "",
+		"placeholder": "(Default: Documents/YSFlight Replays)"
+	},
+
 	# --- Bindings ---
 	{ "key": "pitch_up", "label": "Pitch Up", "section": "Bindings", "type": "binding", "default": "key:Down", "default2": "" },
 	{ "key": "pitch_down", "label": "Pitch Down", "section": "Bindings", "type": "binding", "default": "key:Up", "default2": "" },
@@ -684,5 +703,7 @@ const SETTINGS: Array[Dictionary] = [
 	{ "key": "toggle_mouse_stick", "label": "Toggle Mouse Stick", "section": "Bindings", "type": "binding", "default": "key:Y", "default2": "" },
 
 	{ "key": "pause", "label": "Pause Simulation", "section": "Bindings", "type": "binding", "default": "key:P", "default2": "" },
-	{ "key": "open_settings", "label": "Controls Settings", "section": "Bindings", "type": "binding", "default": "key:Escape", "default2": "joy_button:6" }
+	{ "key": "open_settings", "label": "Controls Settings", "section": "Bindings", "type": "binding", "default": "key:Escape", "default2": "joy_button:6" },
+	# In-game match progression and tactical scoreboard toggle (Ref: planning/replay_and_spectator_system.md)
+	{ "key": "toggle_scoreboard", "label": "Toggle Scoreboard", "section": "Bindings", "type": "binding", "default": "key:Tab", "default2": "" }
 ]

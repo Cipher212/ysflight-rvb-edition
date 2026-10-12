@@ -1,41 +1,38 @@
 extends RefCounted
 
-# The game's sounds: approved CC0 jet engine loops (jet_cockpit.wav by minian89,
-# jet_external.wav by m_cel) and stock YSFlight .wav files from res://sound/
-# (propeller loop, gun and warnings) plus two synthesized cockpit tones
-# (missile lock beep, over-G warning). Loaded once by audio_manager.gd.
-
-# Sound streams loaded at startup
-var jet_cockpit: AudioStreamWAV = null
-var jet_external: AudioStreamWAV = null
-var prop0: AudioStreamWAV = null
-var gun: AudioStreamWAV = null
-var warning: AudioStreamWAV = null
-var stallhorn: AudioStreamWAV = null
-var gearhorn: AudioStreamWAV = null
-var missile: AudioStreamWAV = null
-var rocket: AudioStreamWAV = null
-var bombsaway: AudioStreamWAV = null
-var bang: AudioStreamWAV = null
-var blast: AudioStreamWAV = null
-var blast2: AudioStreamWAV = null
-var touchdwn: AudioStreamWAV = null
-var retractldg: AudioStreamWAV = null
-var extendldg: AudioStreamWAV = null
-var damage: AudioStreamWAV = null
-var hit: AudioStreamWAV = null
-
-# Backward-compatibility alias for test_runner.gd (shares jet_external without duplicate load)
-var engine0: AudioStreamWAV:
-	get: return jet_external
-
-# Synthesized streams
-var lock_beep: AudioStreamWAV = null
-var over_g: AudioStreamWAV = null
+# Owner-selected Sound Revamp files, shared by all bounded voices; other effects stay stock.
+var engine_bands: Array[AudioStreamWAV] = []
+var burner: AudioStreamWAV
+var cockpit_drone: AudioStreamWAV
+var lock_on: AudioStreamWAV
+var enemy_locked: AudioStreamWAV
+var incoming: AudioStreamWAV
+var incoming_near: AudioStreamWAV
+var missile_lost: AudioStreamWAV
+var prop0: AudioStreamWAV
+var gun: AudioStreamWAV
+var stallhorn: AudioStreamWAV
+var gearhorn: AudioStreamWAV
+var missile: AudioStreamWAV
+var rocket: AudioStreamWAV
+var bombsaway: AudioStreamWAV
+var bang: AudioStreamWAV
+var blast: AudioStreamWAV
+var bomb_blast: AudioStreamWAV
+var bomb_water: AudioStreamWAV
+var legacy_bang: AudioStreamWAV
+var legacy_blast: AudioStreamWAV
+var crash_blast: AudioStreamWAV
+var touchdwn: AudioStreamWAV
+var retractldg: AudioStreamWAV
+var extendldg: AudioStreamWAV
+var damage: AudioStreamWAV
+var hit: AudioStreamWAV
+var over_g: AudioStreamWAV
 
 func _init() -> void:
 	_load_all_sounds()
-	_synthesize_tones()
+	_synthesize_over_g()
 
 func _load_sound(filename: String, is_loop: bool = false) -> AudioStreamWAV:
 	var global_path := ProjectSettings.globalize_path("res://sound/" + filename)
@@ -52,59 +49,49 @@ func _load_sound(filename: String, is_loop: bool = false) -> AudioStreamWAV:
 	return stream
 
 func _load_all_sounds() -> void:
-	jet_cockpit = _load_sound("jet_cockpit.wav", true)
-	jet_external = _load_sound("jet_external.wav", true)
+	for band in range(10):
+		engine_bands.append(_load_sound("engine%d.wav" % band, true))
+	burner = _load_sound("burner.wav", true)
+	cockpit_drone = _load_sound("cockpit_drone.wav", true)
+	_load_warning_sounds()
 	prop0 = _load_sound("prop0.wav", true)
 	gun = _load_sound("gun.wav", true)
-	warning = _load_sound("warning.wav", true)
 	stallhorn = _load_sound("stallhorn.wav", true)
 	gearhorn = _load_sound("gearhorn.wav", true)
+	missile = _load_sound("missile.wav")
+	rocket = _load_sound("rocket.wav")
+	bombsaway = _load_sound("bombsaway.wav")
+	bang = _load_sound("bang.wav")
+	blast = _load_sound("blast.wav")
+	bomb_blast = _load_sound("blast2.wav")
+	bomb_water = _load_sound("blast2_water.wav")
+	# Replays without event metadata and aircraft crashes use the installed bank too.
+	legacy_bang = bang
+	legacy_blast = blast
+	crash_blast = bomb_blast
+	touchdwn = _load_sound("touchdwn.wav")
+	retractldg = _load_sound("retractldg.wav")
+	extendldg = _load_sound("extendldg.wav")
+	damage = _load_sound("damage.wav")
+	hit = _load_sound("hit.wav")
 
-	missile = _load_sound("missile.wav", false)
-	rocket = _load_sound("rocket.wav", false)
-	bombsaway = _load_sound("bombsaway.wav", false)
-	bang = _load_sound("bang.wav", false)
-	blast = _load_sound("blast.wav", false)
-	blast2 = _load_sound("blast2.wav", false)
-	touchdwn = _load_sound("touchdwn.wav", false)
-	retractldg = _load_sound("retractldg.wav", false)
-	extendldg = _load_sound("extendldg.wav", false)
-	damage = _load_sound("damage.wav", false)
-	hit = _load_sound("hit.wav", false)
+func _load_warning_sounds() -> void:
+	enemy_locked = _load_sound("locked.wav")
+	incoming = _load_sound("incoming.wav", true)
+	incoming_near = _load_sound("incoming_near.wav", true)
+	missile_lost = _load_sound("missile_lost.wav")
+	lock_on = _load_sound("lock_on.wav", true)
+	# The prepared recording contains its acquisition intro followed by the looping tone.
+	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(
+		"res://sound/missile_warning_manifest.json"))
+	for entry in manifest.files:
+		if entry.output == "lock_on.wav" and lock_on != null:
+			lock_on.loop_begin = int(entry.loop_begin)
+			lock_on.loop_end = int(entry.loop_end)
 
-func _synthesize_tones() -> void:
+func _synthesize_over_g() -> void:
 	var rate := 44100
 	var amp := 32767.0 * 0.35
-
-	# 1. Lock-on beep: 1000 Hz sine, 90 ms on / 90 ms off, -10 dB, 5 ms fade
-	var lock_on_samples := int(round(0.090 * rate))
-	var lock_off_samples := int(round(0.090 * rate))
-	var lock_total_samples := lock_on_samples + lock_off_samples
-	var lock_fade_samples := int(round(0.005 * rate))
-	var lock_bytes := PackedByteArray()
-	lock_bytes.resize(lock_total_samples * 2)
-
-	for i in range(lock_on_samples):
-		var env := 1.0
-		if i < lock_fade_samples:
-			env = float(i) / float(lock_fade_samples)
-		elif i >= lock_on_samples - lock_fade_samples:
-			env = float(lock_on_samples - 1 - i) / float(lock_fade_samples)
-		var t := float(i) / float(rate)
-		var val := int(clamp(sin(TAU * 1000.0 * t) * env * amp, -32768.0, 32767.0))
-		lock_bytes.encode_s16(i * 2, val)
-	for i in range(lock_on_samples, lock_total_samples):
-		lock_bytes.encode_s16(i * 2, 0)
-
-	lock_beep = AudioStreamWAV.new()
-	lock_beep.format = AudioStreamWAV.FORMAT_16_BITS
-	lock_beep.stereo = false
-	lock_beep.mix_rate = rate
-	lock_beep.data = lock_bytes
-	lock_beep.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	lock_beep.loop_begin = 0
-	lock_beep.loop_end = lock_total_samples
-
 	# 2. Over-G warning: two-tone 1600 Hz / 1250 Hz alternating, 50 ms on / 50 ms off each
 	var g_seg_samples := int(round(0.050 * rate))
 	var g_total_samples := g_seg_samples * 4

@@ -4,6 +4,7 @@ extends "res://core/preflight_session.gd"
 const ESC_WINDOW_S := 2.0
 const START_COUNTDOWN_S := 30.0
 const DEBRIEF_SCENE := "res://ui/debrief.tscn"
+const AppState := preload("res://core/app_state.gd")
 
 var countdown_left := -1.0
 var _esc_until := -1.0
@@ -109,6 +110,15 @@ func _finish() -> void:
 	var file := FileAccess.open(EventConfig.RESULTS_PATH, FileAccess.WRITE)
 	if file != null:
 		file.store_string(JSON.stringify(sim.get_event_results(), "\t"))
+
+	# Archive replay session & check autosave (Ref: planning/replay_and_spectator_system.md)
+	if main != null and main.has_node("ReplayRecorder"):
+		var rec = main.get_node("ReplayRecorder")
+		if rec != null:
+			AppState.last_replay_data = rec.finalize_recording()
+			var autosaved: String = rec.check_and_autosave(main.controls)
+			AppState.last_replay_path = autosaved
+
 	finished.emit()
 	main.controls.open_settings_handler = Callable()
 	get_tree().paused = false

@@ -15,6 +15,8 @@ const HomeHud := preload("res://ui/home_hud.gd")
 const GAME_SCENE := "res://main.tscn"
 const BUILDER_SCENE := "res://ui/event_builder.tscn"
 const ONLINE_SCENE := "res://ui/online.tscn"
+# Replay theater & tactical spectator hub (Ref: planning/replay_and_spectator_system.md)
+const REPLAY_SCENE := "res://ui/replay_browser.tscn"
 const DIRECT_FLAGS := ["--run-tests", "--benchmark", "--ai-player", "--ai-soak", "--ai-arrival", "--mission", "--precision-probe"]
 
 const MENU_WIDTH := 620
@@ -111,7 +113,10 @@ func _ready() -> void:
 	_add_button(_body_panel, "FREE FLIGHT", "HomeButton", _free_flight)
 	_add_button(_body_panel, "ONLINE", "HomeButton", func() -> void:
 		get_tree().change_scene_to_file(ONLINE_SCENE))
-	_add_button(_body_panel, "SETTINGS", "HomeBlueButton", func() -> void:
+	# Dedicated spectator & replay theater (Ref: planning/replay_and_spectator_system.md)
+	_add_button(_body_panel, "REPLAYS", "HomeBlueButton", func() -> void:
+		get_tree().change_scene_to_file(REPLAY_SCENE))
+	_add_button(_body_panel, "SETTINGS", "HomeButton", func() -> void:
 		_controls.toggle_settings(false))
 	_add_button(_body_panel, "QUIT", "HomeButton", func() -> void:
 		get_tree().quit())
