@@ -41,6 +41,17 @@ func run() -> void:
 	sim.debug_move_airplane(first, float(pose.x) + 60.0, float(pose.y), float(pose.z))
 	check(sim.respawn_player(MODEL, START, 0), "start reusable as soon as aircraft physically clears")
 	check(not sim.respawn_player(MODEL, "MISSING_START", 0), "invalid start cannot create an unplaced aircraft")
+	# HELI / VTOL starts take helicopters and HELI/VTOL-named aircraft only, in every spawn path.
+	const VTOL_START := "[IFF1]SOUTH_BASE_VTOL_1 (VTOL ONLY)"
+	check(not sim.start_allows_aircraft(VTOL_START, MODEL), "fixed-wing jet barred from VTOL start")
+	check(sim.start_allows_aircraft(VTOL_START, "AH-64(BLUE/HELI)") and sim.start_allows_aircraft(VTOL_START, "X(BLUE/VTOL)"),
+		"HELI / VTOL aircraft allowed on VTOL start")
+	check(not sim.start_allows_aircraft("[IFF1]SOUTH_BASE_HELIPAD_1 (HELI ONLY)", MODEL), "fixed-wing jet barred from helipad")
+	check(sim.start_allows_aircraft(START, MODEL), "ordinary start unaffected")
+	check(not sim.respawn_player(MODEL, VTOL_START, 0), "respawn refuses a jet on a VTOL start")
+	var barred: Dictionary = sim.spawn_player_custom(MODEL, VTOL_START, 0, 100.0, slots)
+	check(not barred.get("ok", true) and "VTOL" in str(barred.get("error", "")), "custom spawn refuses a jet on a VTOL start")
+	check(sim.respawn_player("AH-64(BLUE/HELI)", VTOL_START, 0), "helicopter spawns on a VTOL start")
 	sim.initialize_simulation()
 	sim.load_yfs(OS.get_cmdline_user_args()[0])
 	var second := player_key()

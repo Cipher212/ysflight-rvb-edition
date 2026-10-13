@@ -98,15 +98,19 @@ func refresh_aircraft() -> void:
 			found = i
 	if not _choices.is_empty():
 		_select_aircraft(maxi(found, 0))
+	_refresh_starts()
+	if _model != null:
+		_edited()
+
+# Helipad / VTOL starts depend on the selected aircraft, so rebuild on every selection.
+func _refresh_starts() -> void:
 	var previous := _starts.get_item_text(_starts.selected) if _starts.selected >= 0 else ""
 	_starts.clear()
-	for start in _session.start_positions():
+	for start in _session.start_positions(_current):
 		_starts.add_item(start)
 		if start == previous:
 			_starts.select(_starts.item_count - 1)
 	_fly.disabled = _choices.is_empty() or _starts.item_count == 0
-	if _model != null:
-		_edited()
 
 func _rebuild_aircraft_list() -> void:
 	_aircraft.clear()
@@ -140,6 +144,8 @@ func _select_aircraft(index: int) -> void:
 	var identifier: String = _choices[index]["identifier"]
 	var reset := identifier != _current
 	_current = identifier
+	if reset:
+		_refresh_starts()
 	_aircraft.select(_choice_rows[index])
 	_aircraft.ensure_current_is_visible()
 	_title.text = identifier.replace("_", " ")

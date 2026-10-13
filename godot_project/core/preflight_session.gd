@@ -52,7 +52,15 @@ func choose_team(team: String) -> bool:
 	config["player_team"] = team
 	return true
 
-func start_positions() -> PackedStringArray:
+func set_time_of_day(tod: String) -> void:
+	config["time_of_day"] = tod
+	if not is_event:
+		EventConfig.save(config)
+	if main != null and main.day_cycle != null:
+		main.day_cycle.set_time_mode(tod)
+
+# Ground starts for `aircraft`: HELI / VTOL spots only for helicopters and VTOL aircraft.
+func start_positions(aircraft: String = "") -> PackedStringArray:
 	var air := PackedStringArray()
 	var ground := PackedStringArray()
 	var air_tag := "AI_RED_" if _team == "red" else "AI_BLUE_"
@@ -61,7 +69,7 @@ func start_positions() -> PackedStringArray:
 		var up := value.to_upper()
 		if up.begins_with(air_tag) and not up.contains("CARRIER"):
 			air.append(value)
-		elif up.begins_with(ground_tag) and not up.contains("HELI"):
+		elif up.begins_with(ground_tag) and sim.start_allows_aircraft(value, aircraft):
 			ground.append(value)
 	air.append_array(ground)
 	return air
@@ -86,7 +94,7 @@ func spawn_custom(identifier: String, start: String, fuel: float, slots: Array) 
 	for entry in aircraft():
 		if entry["identifier"] == identifier:
 			permitted = true
-	if not permitted or not start_positions().has(start):
+	if not permitted or not start_positions(identifier).has(start):
 		return {"ok": false, "error": "Aircraft or start is unavailable for your team."}
 	var result: Dictionary = sim.spawn_player_custom(identifier, start, 3 if _team == "red" else 0, fuel, slots)
 	if not bool(result.get("ok", false)):

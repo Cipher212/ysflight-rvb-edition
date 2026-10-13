@@ -47,6 +47,14 @@ const HEAD_RISE_MAX_M := 0.010
 const HEAD_TILT_AT_9G_DEG := -1.25
 const HEAD_LAG_S := 0.2
 
+# Touchdown suspension compression jolt (cockpit view)
+const TOUCHDOWN_JOLT_SPRING_OMEGA := 26.0
+const TOUCHDOWN_JOLT_ZETA := 0.72
+
+var _touchdown_jolt_y: float = 0.0
+var _touchdown_jolt_vy: float = 0.0
+var _touchdown_jolt_pitch: float = 0.0
+
 var camera: Camera3D = null
 var mode: int = CamMode.HORIZON_CHASE
 var status_text: String = ""
@@ -528,7 +536,7 @@ func update(delta: float, player_tfm: Transform3D, tel: Dictionary, airplanes: D
 		CamMode.COCKPIT:
 			camera.fov = cockpit_fov
 			_update_head(delta, float(tel.get("g_force", 1.0)))
-			var eye: Vector3 = (tel.get("cockpit_local", Vector3(0.0, 0.9, -3.15)) as Vector3) + Vector3(0.0, _head_drop, 0.0)
+			var eye: Vector3 = (tel.get("cockpit_local", Vector3(0.0, 0.9, -3.15)) as Vector3) + Vector3(0.0, _head_drop + _touchdown_jolt_y, 0.0)
 			camera.global_position = player_tfm * eye
 			if _padlock_active and _padlock_target_key >= 0 and airplanes.has(_padlock_target_key) and bool(airplanes[_padlock_target_key].get("is_alive", true)):
 				var tgt_pos: Vector3 = airplanes[_padlock_target_key]["pos"]
@@ -540,7 +548,7 @@ func update(delta: float, player_tfm: Transform3D, tel: Dictionary, airplanes: D
 				if _padlock_active:
 					_padlock_active = false
 					_padlock_target_key = -1
-				camera.global_basis = (player_tfm.basis * Basis.from_euler(Vector3(head_pitch + _head_tilt, head_yaw, 0.0))).orthonormalized()
+				camera.global_basis = (player_tfm.basis * Basis.from_euler(Vector3(head_pitch + _head_tilt + _touchdown_jolt_pitch, head_yaw, 0.0))).orthonormalized()
 				status_text = "F1: COCKPIT VIEW (FOV %d°)" % int(round(cockpit_fov))
 
 		CamMode.HORIZON_CHASE:
@@ -666,7 +674,24 @@ func _update_target_cockpit(airplanes: Dictionary, player_iff: int) -> void:
 	status_text = "F1: COCKPIT [%d/%d %s: %s]" % [keys.find(_cockpit_key) + 1, keys.size(),
 		_side_name(st, player_iff), st.get("identifier", "AI")]
 
+func trigger_touchdown_jolt(hardness: float = 1.0) -> void:
+	var h: float = clampf(hardness, 0.5, 1.8)
+	_touchdown_jolt_y = -0.045 * h
+	_touchdown_jolt_vy = -0.45 * h
+	_touchdown_jolt_pitch = deg_to_rad(-1.2) * h
+
 func _update_head(delta: float, g: float) -> void:
+	# Update touchdown suspension spring-damper
+	if absf(_touchdown_jolt_y) > 0.0002 or absf(_touchdown_jolt_vy) > 0.002 or absf(_touchdown_jolt_pitch) > 0.0002:
+		var ay: float = -TOUCHDOWN_JOLT_SPRING_OMEGA * TOUCHDOWN_JOLT_SPRING_OMEGA * _touchdown_jolt_y - 2.0 * TOUCHDOWN_JOLT_ZETA * TOUCHDOWN_JOLT_SPRING_OMEGA * _touchdown_jolt_vy
+		_touchdown_jolt_vy += ay * delta
+		_touchdown_jolt_y += _touchdown_jolt_vy * delta
+		_touchdown_jolt_pitch = move_toward(_touchdown_jolt_pitch, 0.0, delta * 3.5)
+	else:
+		_touchdown_jolt_y = 0.0
+		_touchdown_jolt_vy = 0.0
+		_touchdown_jolt_pitch = 0.0
+
 	if _controls == null or not bool(_controls.get_value("cockpit_head_movement", true)):
 		_reset_head()
 		return
@@ -680,6 +705,9 @@ func _update_head(delta: float, g: float) -> void:
 func _reset_head() -> void:
 	_head_drop = 0.0
 	_head_tilt = 0.0
+	_touchdown_jolt_y = 0.0
+	_touchdown_jolt_vy = 0.0
+	_touchdown_jolt_pitch = 0.0
 
 # Orbit offset around an aircraft whose roll is ignored (horizon-stable chase).
 func _orbit_offset(aircraft_basis: Basis) -> Vector3:

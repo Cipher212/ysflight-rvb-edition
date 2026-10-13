@@ -100,7 +100,7 @@ func _build_settings(parent: Control) -> void:
 	Kit.row(box, "AI DIFFICULTY", diff)
 
 	var tod := Kit.options(EventConfig.TIMES_OF_DAY, maxi(EventConfig.TIMES_OF_DAY.find(cfg["time_of_day"]), 0))
-	tod.tooltip_text = "STATIC: fixed daylight. DYNAMIC: day/night cycle progressing through the event"
+	tod.tooltip_text = "Pick a fixed time preset (DAWN..NIGHT, STATIC = 12:00), or DYNAMIC for a dawn-to-night cycle"
 	tod.item_selected.connect(func(i: int) -> void: cfg["time_of_day"] = EventConfig.TIMES_OF_DAY[i])
 	Kit.row(box, "TIME OF DAY", tod)
 

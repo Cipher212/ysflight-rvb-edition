@@ -15,6 +15,7 @@ class_name GraphicsSettings
 #   - EFFECT_KEYS: effects for stronger PCs, each on/off (on in the Medium and High presets, off in Low):
 #     aircraft shadows (C++), cloud shadows / water shine / ground detail (global shader uniforms), heat haze (camera
 #     cull layer), sun & explosion glare (fx/ nodes).
+#   - colour_style: colour grade preset (world/color_grade.gd STYLES), independent of the graphics preset.
 #   - graphics_preset: Synchronises Low/Medium/High presets or sets Custom on edit.
 #
 # BENCHMARK MODE:
@@ -51,6 +52,10 @@ func _on_controls_changed(key: String) -> void:
 		_apply_setting(key)
 	elif key == "vsync":
 		_apply_vsync()
+	elif key == "time_of_day":
+		_apply_time_of_day()
+	elif key == "colour_style":
+		_apply_colour_style()
 	elif key.is_empty():
 		apply_all_settings()
 
@@ -109,6 +114,8 @@ func apply_all_settings() -> void:
 	for key in EFFECT_KEYS:
 		_apply_effect(key, bool(controls.get_value(key, true)))
 	_apply_low_clouds()
+	_apply_time_of_day()
+	_apply_colour_style()
 
 func _apply_benchmark_defaults() -> void:
 	# In benchmark mode, enforce Medium values and leave vsync to benchmark.gd
@@ -121,6 +128,8 @@ func _apply_benchmark_defaults() -> void:
 	if main != null and main.camera != null:
 		main.camera.far = 80000.0
 		main.sky_environment.set_draw_distance(main.camera.far)
+	if main != null and main.sky_environment != null:
+		main.sky_environment.set_colour_style("RvB Default")
 	if main != null:
 		main.set_effects_quality(1) # Medium
 		for key in EFFECT_KEYS:
@@ -151,6 +160,28 @@ func _apply_low_clouds() -> void:
 		return
 	var on: bool = bool(controls.get_value("low_clouds", true))
 	main.low_cloud_layer.set_clouds_enabled(on)
+
+func _apply_time_of_day() -> void:
+	if main == null or main.day_cycle == null or controls == null:
+		return
+	if main.benchmark_mode or main.test_mode or main.arrival_test_mode or not main.time_of_day_override.is_empty():
+		return
+	var sel: String = str(controls.get_value("time_of_day", "Event / Default"))
+	if sel == "Event / Default" or sel.is_empty():
+		var fallback := "STATIC"
+		if main.preflight_session != null and main.preflight_session.config is Dictionary:
+			fallback = str(main.preflight_session.config.get("time_of_day", "STATIC"))
+		main.day_cycle.set_time_mode(fallback)
+	else:
+		main.day_cycle.set_time_mode(sel)
+
+func _apply_colour_style() -> void:
+	if main == null or main.sky_environment == null or controls == null:
+		return
+	if main.benchmark_mode:
+		return
+	var style: String = str(controls.get_value("colour_style", "RvB Default"))
+	main.sky_environment.set_colour_style(style)
 
 func _apply_render_scale() -> void:
 	var vp: Viewport = get_viewport()
@@ -214,6 +245,7 @@ func _apply_effect(key: String, on: bool) -> void:
 	match key:
 		"aircraft_shadows":
 			main.ysflight_sim.set_aircraft_shadows_enabled(on)
+			main.ysflight_sim.set_ground_shadows_enabled(on)
 		"cloud_shadows":
 			RenderingServer.global_shader_parameter_set("cloud_shadows_on", 1.0 if on else 0.0)
 		"water_shine":

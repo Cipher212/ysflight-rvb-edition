@@ -11,7 +11,7 @@ const MIN_MINUTES := 5
 const MAX_MINUTES := 120
 const MAPS := [{"id": "[RVB]LUAVI", "label": "LUAVI"}]
 const DIFFICULTIES := ["STANDARD"]             # placeholder: every AI flies the same for now
-const TIMES_OF_DAY := ["STATIC", "DYNAMIC"]     # STATIC: fixed daylight; DYNAMIC: dawn-to-night cycle
+const TIMES_OF_DAY := ["STATIC", "DYNAMIC", "DAWN", "MORNING", "DAYLIGHT", "AFTERNOON", "SUNSET", "DUSK", "NIGHT"]
 # Placeholder pilot names (callsign-style, short enough for the roster and debrief tables)
 const NAMES := ["BOB", "JIM", "TIM", "SAM", "MAX", "LEO", "RAY", "KAI", "ZED", "NED", "OWEN", "EVAN", "HANK",
 	"IVAN", "JACK", "KURT", "LUKE", "MARK", "NICK", "OTTO", "PAUL", "RICK", "SEAN", "TOBY", "VICK", "WADE",
@@ -42,6 +42,8 @@ static func validated(cfg: Dictionary) -> Dictionary:
 	out["duration_min"] = clampi(int(out["duration_min"]), MIN_MINUTES, MAX_MINUTES)
 	out["team_size"] = 16 if int(out["team_size"]) == 16 else 8
 	out["player_team"] = "red" if str(out["player_team"]) == "red" else "blue"
+	var tod_str := str(out.get("time_of_day", "")).to_upper()
+	out["time_of_day"] = tod_str if tod_str in TIMES_OF_DAY else TIMES_OF_DAY[0]
 	var rules: Dictionary = defaults()["rules"]
 	if out["rules"] is Dictionary:
 		for k in rules.keys():

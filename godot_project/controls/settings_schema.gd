@@ -441,6 +441,31 @@ const SETTINGS: Array[Dictionary] = [
 		"options": ["Low", "Medium", "High", "Custom"]
 	},
 	{
+		"key": "time_of_day",
+		"label": "Time of Day",
+		"section": "Graphics",
+		"type": "enum",
+		"default": "Event / Default",
+		"options": [
+			"Event / Default",
+			"Dawn (06:00)",
+			"Morning (08:30)",
+			"Daylight (12:00)",
+			"Afternoon (16:00)",
+			"Sunset (18:30)",
+			"Dusk (19:45)",
+			"Night (22:00)"
+		]
+	},
+	{
+		"key": "colour_style",
+		"label": "Colour Style",
+		"section": "Graphics",
+		"type": "enum",
+		"default": "RvB Default",
+		"options": ["RvB Default", "Vibrant", "Grim", "Classic YSFlight", "Cinematic"]
+	},
+	{
 		"key": "render_scale",
 		"label": "3D Render Scale",
 		"section": "Graphics",
@@ -491,9 +516,10 @@ const SETTINGS: Array[Dictionary] = [
 		"options": ["Low", "Medium", "High"]
 	},
 	# Effects for stronger PCs: on in the Medium and High presets, off in Low (graphics_settings.gd).
+	# Projected planar shadows for aircraft and buildings (ground objects).
 	{
 		"key": "aircraft_shadows",
-		"label": "Aircraft Shadows",
+		"label": "Shadows",
 		"section": "Graphics",
 		"type": "bool",
 		"default": true

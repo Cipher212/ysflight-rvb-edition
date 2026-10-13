@@ -1,8 +1,26 @@
-# YSFlight RvB Edition - v0.5.0-pre-alpha
+# YSFlight RvB Edition - v0.6.0-pre-alpha
 
 YSFlight's flight simulation (YSFlight Community Edition) running inside the Godot 4 engine, built for
 the RvB (Red vs Blue) community events. **This is a pre-alpha test build**: expect bugs and missing
 features. You can set up and fly offline RvB events against the AI on the Luavi map, or use Free Flight.
+
+**New in v0.6.0 — 13 October 2026:**
+- Luavi: the central island is now a contested battlefield. It has four towns built from Luavi's own street
+  layouts, a perimeter road, smooth beaches and a high road bridge to the eastern islet.
+- New Red regional airport (2.4 km runway 18/36, rapid-exit taxiways, terminal and maintenance aprons,
+  Mi-28 helipads, fuel area) and a Blue south helibase (400 m Harrier strip, hangar apron, four helipads,
+  fuel area, security gate). Both have runway/taxiway areas ready for the AI, and an indestructible supply point.
+- New helicopter and VTOL start positions at both fields. Helipad and VTOL spots accept only helicopters and
+  aircraft with HELI or VTOL in their name; fixed-wing jets are never placed there.
+- Protected three-bay fuel/service aprons and safer taxi routes at Luavi's existing airfields; forward
+  runway exits and occupied-runway arrival fixes.
+- Replay theater, spectator camera, live scoreboard and kill feed; near/far missile warnings with lock tone.
+- Upgraded F-16 HUD and MFDs (compass, weapons, pitch ladder, softer symbology).
+- Cockpit immersion: deeper high-G breathing, touchdown bump and tyre smoke on the actual touchdown,
+  stall-buffet rumble, flap clunks, runway roll and exterior sonic booms.
+- Sun-cast shadows for aircraft and buildings, a Time of Day setting (dawn to night presets or a full
+  cycle), event time-of-day choice and new Colour Style graphics presets.
+- Attacker AI and class flight-model tuning, faster AI terrain scans.
 
 **New in v0.5.0 — 9 October 2026:**
 - Pre-flight lobby for offline events and Free Flight: choose your team, view the roster, use local chat,

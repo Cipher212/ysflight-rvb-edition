@@ -17,19 +17,31 @@ const END_HOUR := 22.0               # 22:00 full night
 const REFERENCE_DURATION_S := 3600.0 # 60-min nominal RvB match duration for the full cycle
 const UPDATE_INTERVAL_S := 1.0       # 1 Hz update cadence: saves GPU/CPU uniform bandwidth
 
+const PRESET_HOURS := {
+	"STATIC": STATIC_HOUR,
+	"DAYLIGHT": 12.0,
+	"DAWN": 6.0,
+	"MORNING": 8.5,
+	"AFTERNOON": 16.0,
+	"SUNSET": 18.5,
+	"DUSK": 19.75,
+	"NIGHT": 22.0,
+}
+
+
 # Tunable artistic defaults (PS2 Ace Combat / restrained Pacific-island style):
 const KEYFRAMES := [
 	{
-		"hour": 6.0, # Dawn: muted blue/lilac with a restrained warm horizon
-		"sky_top": Color(0.28, 0.35, 0.52),
-		"haze": Color(0.62, 0.52, 0.50),
-		"sun_color": Color(1.0, 0.88, 0.72),
-		"sun_energy": 0.60,
-		"sun_pitch_deg": -8.0,
+		"hour": 6.0, # Dawn: low sun right on the horizon, brighter early-morning sky and warmpeach glow
+		"sky_top": Color(0.32, 0.42, 0.62),
+		"haze": Color(0.78, 0.60, 0.50),
+		"sun_color": Color(1.0, 0.82, 0.60),
+		"sun_energy": 0.72,
+		"sun_pitch_deg": -2.5,
 		"sun_yaw_deg": 75.0,
-		"ambient_color": Color(0.42, 0.40, 0.48),
-		"ambient_energy": 0.55,
-		"daylight_strength": 0.60,
+		"ambient_color": Color(0.50, 0.48, 0.55),
+		"ambient_energy": 0.62,
+		"daylight_strength": 0.70,
 	},
 	{
 		"hour": 8.5, # Morning transition
@@ -57,39 +69,39 @@ const KEYFRAMES := [
 	},
 	{
 		"hour": 16.0, # Late afternoon
-		"sky_top": Color(0.24, 0.40, 0.64),
-		"haze": Color(0.56, 0.60, 0.66),
-		"sun_color": Color(1.0, 0.92, 0.80),
-		"sun_energy": 0.80,
-		"sun_pitch_deg": -30.0,
+		"sky_top": Color(0.25, 0.41, 0.65),
+		"haze": Color(0.62, 0.60, 0.62),
+		"sun_color": Color(1.0, 0.90, 0.76),
+		"sun_energy": 0.82,
+		"sun_pitch_deg": -28.0,
 		"sun_yaw_deg": -20.0,
-		"ambient_color": Color(0.50, 0.50, 0.52),
-		"ambient_energy": 0.60,
+		"ambient_color": Color(0.52, 0.50, 0.52),
+		"ambient_energy": 0.62,
 		"daylight_strength": 0.95,
 	},
 	{
-		"hour": 18.5, # Sunset: blue overhead and dusty peach horizon
-		"sky_top": Color(0.20, 0.28, 0.48),
-		"haze": Color(0.64, 0.46, 0.38),
-		"sun_color": Color(1.0, 0.75, 0.50),
-		"sun_energy": 0.50,
-		"sun_pitch_deg": -6.0,
+		"hour": 18.5, # Sunset: vibrant golden-orange horizon, low sun, bright warm light across terrain/water
+		"sky_top": Color(0.26, 0.36, 0.58),
+		"haze": Color(0.92, 0.52, 0.26),
+		"sun_color": Color(1.0, 0.62, 0.25),
+		"sun_energy": 0.78,
+		"sun_pitch_deg": -3.5,
 		"sun_yaw_deg": -70.0,
-		"ambient_color": Color(0.38, 0.34, 0.38),
-		"ambient_energy": 0.50,
-		"daylight_strength": 0.50,
+		"ambient_color": Color(0.58, 0.46, 0.42),
+		"ambient_energy": 0.62,
+		"daylight_strength": 0.75,
 	},
 	{
-		"hour": 19.75, # Dusk / Twilight
-		"sky_top": Color(0.12, 0.16, 0.30),
-		"haze": Color(0.28, 0.22, 0.28),
-		"sun_color": Color(0.85, 0.45, 0.25),
-		"sun_energy": 0.15,
+		"hour": 19.75, # Dusk / Twilight: deep blue sky with warm amber-rose afterglow on the horizon
+		"sky_top": Color(0.14, 0.19, 0.36),
+		"haze": Color(0.52, 0.30, 0.28),
+		"sun_color": Color(0.95, 0.45, 0.20),
+		"sun_energy": 0.30,
 		"sun_pitch_deg": -1.0,
 		"sun_yaw_deg": -80.0,
-		"ambient_color": Color(0.25, 0.24, 0.30),
-		"ambient_energy": 0.38,
-		"daylight_strength": 0.15,
+		"ambient_color": Color(0.34, 0.32, 0.40),
+		"ambient_energy": 0.48,
+		"daylight_strength": 0.25,
 	},
 	{
 		"hour": 22.0, # Night: dark navy, with enough ambient fill to see aircraft/runways
@@ -113,17 +125,33 @@ var _last_applied_hour: float = -999.0
 var _last_update_msec: int = -999999
 var _force_next: bool = false
 var _event_session: Node = null
+var _sim: Node = null
+
+func bind_simulation(sim: Node) -> void:
+	_sim = sim
+	_force_next = true
+	var h: float = _last_applied_hour if _last_applied_hour >= 0.0 else STATIC_HOUR
+	set_time_of_day(h)
 
 func setup(sky_env: Node, sun: DirectionalLight3D, sun_glare: Node, time_mode: String = "STATIC") -> void:
 	_sky_env = sky_env
 	_sun = sun
 	_sun_glare = sun_glare
-	_time_mode = time_mode.to_upper()
+	set_time_mode(time_mode)
+
+func set_time_mode(time_mode: String) -> void:
+	var token := time_mode.strip_edges().split(" ")[0].to_upper()
+	if token.is_empty():
+		token = "STATIC"
+	_time_mode = token
 	_force_next = true
 	if _time_mode == "DYNAMIC":
 		set_time_of_day(START_HOUR)
+	elif PRESET_HOURS.has(_time_mode):
+		set_time_of_day(float(PRESET_HOURS[_time_mode]))
 	else:
 		set_time_of_day(STATIC_HOUR)
+
 
 func bind_event_session(session: Node) -> void:
 	_event_session = session
@@ -190,14 +218,22 @@ static func evaluate_palette(hours: float) -> Dictionary:
 	return KEYFRAMES[0].duplicate()
 
 func _apply_palette(p: Dictionary) -> void:
+	var to_sun := Vector3(0.0, 1.0, 0.0)
 	if _sun != null:
 		_sun.rotation_degrees = Vector3(p["sun_pitch_deg"], p["sun_yaw_deg"], 0.0)
 		_sun.light_color = p["sun_color"]
 		_sun.light_energy = p["sun_energy"]
-		var to_sun: Vector3 = (_sun.global_basis.z if _sun.is_inside_tree() else _sun.basis.z).normalized()
+		to_sun = (_sun.global_basis.z if _sun.is_inside_tree() else _sun.basis.z).normalized()
 		RenderingServer.global_shader_parameter_set("sun_direction", to_sun)
 		if _sun_glare != null and _sun_glare.has_method("set_sun"):
 			_sun_glare.set_sun(to_sun, p["daylight_strength"])
+	else:
+		var basis_rot := Basis.from_euler(Vector3(deg_to_rad(float(p["sun_pitch_deg"])), deg_to_rad(float(p["sun_yaw_deg"])), 0.0))
+		to_sun = basis_rot.z.normalized()
+		RenderingServer.global_shader_parameter_set("sun_direction", to_sun)
+
+	if _sim != null and _sim.has_method("set_sun_state"):
+		_sim.set_sun_state(to_sun, float(p["daylight_strength"]))
 
 	var haze: Color = p["haze"]
 	var haze_linear: Color = haze.srgb_to_linear()

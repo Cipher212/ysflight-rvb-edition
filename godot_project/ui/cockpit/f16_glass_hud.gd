@@ -5,7 +5,7 @@ extends Control
 const Symbols = preload("res://ui/cockpit/f16_hud_symbols.gd")
 const AIRCRAFT := "F-16(BLUE/MULTIROLE)"
 const SOURCE := "res://user/RvB/blue/f16hud.srf"
-const COAMING_MARGIN := 22.0 # pixels at the normal 65-degree cockpit field of view
+const COAMING_MARGIN := 0.0 # full height of the visible f16hud.srf combiner glass
 const FRAME_MARGIN := 2.0
 var camera: Camera3D
 var aircraft := Transform3D.IDENTITY

@@ -6,7 +6,8 @@ extends SceneTree
 # 3. DYNAMIC mode progressing with event elapsed time
 # 4. Duplicate-time calls doing no work (deterministic caching)
 # 5. Restart / reset behavior (new event resets to dawn, respawn/menu does not)
-# 6. Safe handling of invalid/missing state
+# 6. Manual time-of-day presets & live switching
+# 7. Simulation sun-state binding & sun tracking
 
 const DayCycleScript = preload("res://world/day_cycle.gd")
 const SkyEnvironmentScript = preload("res://world/sky_environment.gd")
@@ -162,8 +163,81 @@ func _init() -> void:
 	else:
 		print("PASS: New event resets cycle to dawn (06:00)")
 
+	# 6. Manual time-of-day presets & live switching
+	var presets := {
+		"DAWN": 6.0,
+		"MORNING": 8.5,
+		"DAYLIGHT": 12.0,
+		"AFTERNOON": 16.0,
+		"SUNSET": 18.5,
+		"DUSK": 19.75,
+		"NIGHT": 22.0,
+		"Sunset (18:30)": 18.5,
+		"Night (22:00)": 22.0,
+	}
+	for mode_label in presets.keys():
+		var expected_h := float(presets[mode_label])
+		dc.set_time_mode(mode_label)
+		if absf(dc.get_time_of_day() - expected_h) > 0.01:
+			print("FAIL: Preset '%s' applied hour %.2f (expected %.2f)" % [mode_label, dc.get_time_of_day(), expected_h])
+			failed += 1
+		else:
+			print("PASS: Preset '%s' applied hour %.2f" % [mode_label, dc.get_time_of_day()])
+
+	# 7. Simulation sun-state binding & sun tracking
+	var stub := SimStub.new()
+	root.add_child(stub)
+	dc.bind_simulation(stub)
+	if stub.call_count == 0:
+		print("FAIL: bind_simulation did not immediately apply sun state to sim")
+		failed += 1
+	else:
+		print("PASS: bind_simulation immediately forwarded sun state")
+
+	dc.set_time_mode("DAWN")
+	var dawn_sun: Vector3 = stub.last_to_sun
+	var dawn_light: float = stub.last_daylight
+	var dawn_unit_ok: bool = absf(dawn_sun.length() - 1.0) < 0.01
+	var dawn_light_ok: bool = absf(dawn_light - 0.70) < 0.05
+	var dawn_y_ok: bool = dawn_sun.y > 0.0
+	if not (dawn_unit_ok and dawn_light_ok and dawn_y_ok):
+		print("FAIL: DAWN sun state invalid (daylight: %.2f expected ~0.70, to_sun: %s, len: %.2f, y > 0: %s)" % [
+			dawn_light, dawn_sun, dawn_sun.length(), str(dawn_y_ok)
+		])
+		failed += 1
+	else:
+		print("PASS: DAWN forwarded daylight ~0.70 (got %.2f) and unit to_sun with y > 0 (%s)" % [dawn_light, dawn_sun])
+
+	dc.set_time_mode("SUNSET")
+	var sunset_sun: Vector3 = stub.last_to_sun
+	var swung: bool = (dawn_sun.x * sunset_sun.x < 0.0) or (dawn_sun.z * sunset_sun.z < 0.0)
+	if not swung:
+		print("FAIL: SUNSET to_sun horizontal component did not swing from DAWN (dawn: %s, sunset: %s)" % [dawn_sun, sunset_sun])
+		failed += 1
+	else:
+		print("PASS: SUNSET to_sun has opposite-sign horizontal component from DAWN (dawn: %s, sunset: %s)" % [dawn_sun, sunset_sun])
+
+	dc.set_time_mode("NIGHT")
+	var night_light: float = stub.last_daylight
+	if absf(night_light - 0.0) > 0.01:
+		print("FAIL: NIGHT did not forward daylight 0.0 (got %.2f)" % night_light)
+		failed += 1
+	else:
+		print("PASS: NIGHT forwarded daylight 0.0")
+
 	# Clean up test nodes
 	root.queue_free()
 
 	print("\n[DayCycleTest] Results: %d failures." % failed)
 	quit(failed)
+
+class SimStub extends Node:
+	var call_count: int = 0
+	var last_to_sun: Vector3 = Vector3.ZERO
+	var last_daylight: float = -1.0
+
+	func set_sun_state(to_sun: Vector3, daylight: float) -> void:
+		call_count += 1
+		last_to_sun = to_sun
+		last_daylight = daylight
+

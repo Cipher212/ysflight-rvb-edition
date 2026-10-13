@@ -16,10 +16,12 @@ func run() -> void:
 	sim = ClassDB.instantiate("YSFlightSimulation")
 	root.add_child(sim)
 	sim.initialize_simulation()
+	sim.set_random_seed(12345) # Match the soak harness; later RTB traffic must be reproducible.
 	sim.set_ai_respawn_enabled(false)
 	sim.set_ai_ground_ops(true)
 	sim.set_ai_recovery_all_roles(true)
 	sim.load_yfs(args[0])
+	sim.debug_set_route_seed(12345)
 	sim.set_process(false) # This headless proof needs physics, not mesh/visual synchronization.
 	sim.enable_player_autopilot()
 	var initial: Array = sim.get_ai_combat_state()
@@ -36,12 +38,15 @@ func run() -> void:
 		if rows.is_empty(): continue
 		time = float(rows[0].t)
 		var alive := true
+		var pavement_clean := true
 		for row in rows:
 			latest[int(row.search_key)] = row
 			if bool(row.report.airborne) and not departures.has(int(row.search_key)):
 				departures[int(row.search_key)] = row
 			# A later combat death or RTB must not erase a verified safe takeoff.
 			alive = alive and (bool(row.alive) or departures.has(int(row.search_key)))
+			if not departures.has(int(row.search_key)):
+				pavement_clean = pavement_clean and float(row.report.off_pavement_s) <= 0.1
 		var departed := 0
 		for key in roster:
 			if departures.has(key): departed += 1
@@ -53,7 +58,7 @@ func run() -> void:
 		if departed == roster.size() and alive:
 			passed = true
 			break
-		if not alive or time >= 900.0: break
+		if not alive or not pavement_clean or time >= 900.0: break
 	passed = passed and stationary and roster.size() == 32
 	for key in departures:
 		latest[key] = departures[key]

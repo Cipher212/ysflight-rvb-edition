@@ -11,7 +11,9 @@ extends Node3D
 # --ai-combat-human (the player flies against the AI); --ai-combat-legacy requires a checkpoint runtime.
 # Ordinary RvB missions always use the unified HIGH controller; --rebuilt-ai remains a launcher alias.
 # --precision-probe [--probe-out <dir>] (render precision far from the map centre, tests/precision_probe.gd),
-# --origin-threshold <m> (floating render origin re-centre distance; 0 = fixed origin, for A/B runs).
+# --shadow-shots <dir> (one screenshot per time of day, tests/shadow_shots.gd, tools/shadow_shots.py),
+# --origin-threshold <m> (floating render origin re-centre distance; 0 = fixed origin, for A/B runs),
+# --time-of-day <MODE> (overrides time of day in all modes, e.g. DAWN, DAYLIGHT, SUNSET, NIGHT).
 
 const AudioManagerScript = preload("res://audio_manager.gd")
 const HUDScript = preload("res://hud.gd")
@@ -30,6 +32,7 @@ const PuffSystemScript = preload("res://fx/puff_system.gd")
 const ExplosionFXScript = preload("res://fx/explosion_fx.gd")
 const CrashFXScript = preload("res://fx/crash_fx.gd")
 const DeathFXScript = preload("res://fx/death_fx.gd")
+const TouchdownFXScript = preload("res://fx/touchdown_fx.gd")
 const DebugOverlayScript = preload("res://ui/debug_overlay.gd")
 const FpsMonitorScript = preload("res://ui/fps_monitor.gd")
 const GameMessagesScript = preload("res://ui/game_messages.gd")
@@ -39,6 +42,7 @@ const AiSoakScript = preload("res://tests/ai_soak.gd")
 const AiArrivalTestScript = preload("res://tests/ai_arrival_test.gd")
 const AiCombatTestScript = preload("res://tests/ai_combat_test.gd")
 const PrecisionProbeScript = preload("res://tests/precision_probe.gd")
+const ShadowShotsScript = preload("res://tests/shadow_shots.gd")
 const SkyEnvironmentScript = preload("res://world/sky_environment.gd")
 const DayCycleScript = preload("res://world/day_cycle.gd")
 const AppState = preload("res://core/app_state.gd")
@@ -83,6 +87,7 @@ var free_flight_mode := false # Home > FREE FLIGHT: the map with no other aircra
 var event_session: Node = null
 var preflight_session: Node = null
 var day_cycle: Node = null
+var time_of_day_override: String = ""
 var low_cloud_layer: Node3D = null
 var cockpit_mfd: Node3D = null
 var glass_hud: Control = null
@@ -91,6 +96,7 @@ var _puffs: Node3D = null
 var _explosions: Node3D = null
 var _crashes: Node = null
 var _death_fx: Node3D = null
+var _touchdown_fx: Node = null
 var sun_glare: MeshInstance3D = null # Graphics settings switch these (graphics_settings.gd)
 var blast_glow: MeshInstance3D = null
 var _sun: DirectionalLight3D = null
@@ -103,6 +109,9 @@ func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	benchmark_mode = "--benchmark" in args
 	test_mode = "--run-tests" in args
+	var tod_i := args.find("--time-of-day")
+	if tod_i >= 0 and tod_i + 1 < args.size():
+		time_of_day_override = args[tod_i + 1]
 	var soak_i := args.find("--ai-soak")
 	var arrival_i := args.find("--ai-arrival")
 	if "--ai-combat-legacy" in args:
@@ -140,7 +149,8 @@ func _ready() -> void:
 		event_config = EventConfig.load_config()
 		mission = EventMission.write(event_config) # map + rules only; the event spawns the aircraft
 	elif free_flight_mode:
-		var solo: Dictionary = EventConfig.load_config()
+		event_config = EventConfig.load_config()
+		var solo: Dictionary = event_config.duplicate(true)
 		solo["ground_fire"] = false # no enemies: the map's SAM sites and ships hold fire
 		mission = EventMission.write(solo)
 	ysflight_sim.load_yfs(mission)
@@ -185,13 +195,18 @@ func _ready() -> void:
 	_crashes.setup(_puffs, _explosions)
 	_death_fx = DeathFXScript.new()
 	add_child(_death_fx)
+	_touchdown_fx = TouchdownFXScript.new()
+	_touchdown_fx.name = "TouchdownFX"
+	add_child(_touchdown_fx)
+	_touchdown_fx.setup(_puffs)
 	sun_glare = SunGlareScript.new()
 	sun_glare.setup(camera, _sun)
 	day_cycle = DayCycleScript.new()
 	day_cycle.name = "DayCycle"
 	add_child(day_cycle)
-	var time_mode: String = str(event_config.get("time_of_day", "STATIC")) if event_mode else "STATIC"
+	var time_mode: String = time_of_day_override if not time_of_day_override.is_empty() else (str(event_config.get("time_of_day", "STATIC")) if (event_mode or free_flight_mode) else "STATIC")
 	day_cycle.setup(sky_environment, _sun, sun_glare, time_mode)
+	day_cycle.bind_simulation(ysflight_sim)
 
 	low_cloud_layer = LowCloudLayerScript.new()
 	low_cloud_layer.name = "LowCloudLayer"
@@ -202,6 +217,18 @@ func _ready() -> void:
 	audio_manager.name = "AudioManager"
 	add_child(audio_manager)
 	audio_manager.setup(ysflight_sim)
+	audio_manager.player_touched_down.connect(func():
+		if is_instance_valid(ysflight_sim):
+			var p_tfm: Transform3D = ysflight_sim.get_player_transform()
+			var p_tel: Dictionary = ysflight_sim.get_player_telemetry()
+			var p_vel: Vector3 = p_tel.get("velocity", Vector3.ZERO)
+			var p_rad: float = float(p_tel.get("outside_radius", 8.0))
+			if _touchdown_fx != null:
+				_touchdown_fx.trigger_burst(p_tfm, p_vel, p_rad)
+			if camera_rig != null:
+				var vsi: float = absf(float(p_tel.get("vsi_fpm", 300.0)))
+				camera_rig.trigger_touchdown_jolt(clampf(vsi / 350.0, 0.6, 1.6))
+	)
 
 	gforce = GForceEffectScript.new()
 	gforce.name = "GForce" # controls.gd looks it up by name (G-LOC)
@@ -343,6 +370,13 @@ func _ready() -> void:
 		add_child(combat)
 		var cout_i := args.find("--combat-out")
 		combat.setup(self, args[cout_i + 1] if cout_i >= 0 and cout_i + 1 < args.size() else "user://combat_test")
+	var shots_i := args.find("--shadow-shots")
+	if shots_i >= 0 and shots_i + 1 < args.size():
+		var shots: Node = ShadowShotsScript.new()
+		shots.name = "ShadowShots"
+		shots.main = self
+		shots.out_dir = args[shots_i + 1]
+		add_child(shots)
 	if probe_test:
 		var probe: Node = PrecisionProbeScript.new()
 		probe.name = "PrecisionProbe"
@@ -358,6 +392,8 @@ func set_effects_quality(quality: int) -> void:
 	_explosions.quality = quality
 	_crashes.quality = quality
 	_death_fx.quality = quality
+	if _touchdown_fx != null:
+		_touchdown_fx.quality = quality
 
 func _process(delta: float) -> void:
 	var t0 := Time.get_ticks_usec()
@@ -374,6 +410,8 @@ func _process(delta: float) -> void:
 	_explosions.update(delta, explosions)
 	_crashes.update(delta, fx_state["crashes"])
 	_death_fx.update(delta, fx_state["aircraft"])
+	if _touchdown_fx != null:
+		_touchdown_fx.update(delta, camera.global_position, player_tfm, tel, airplanes)
 	sun_glare.update()
 	blast_glow.update(delta)
 	if low_cloud_layer != null:

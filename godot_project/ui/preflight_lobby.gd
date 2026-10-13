@@ -3,9 +3,11 @@ extends Control
 const Kit := preload("res://ui/ui_kit.gd")
 const Roster := preload("res://ui/lobby_roster.gd")
 const Messages := preload("res://ui/lobby_messages.gd")
+const EventConfig := preload("res://core/event_config.gd")
 var _session: Node
 var _status: Label
 var _team_buttons: Array[Button] = []
+var _tod_opt: OptionButton
 var _roster: VBoxContainer
 var _resume: Button
 var _end: Button
@@ -46,6 +48,12 @@ func setup(session: Node) -> void:
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	teams.add_child(spacer)
+	teams.add_child(Kit.label("TIME OF DAY", "SectionLabel"))
+	var cur_tod := str(session.config.get("time_of_day", "STATIC")).to_upper()
+	_tod_opt = Kit.options(EventConfig.TIMES_OF_DAY, maxi(EventConfig.TIMES_OF_DAY.find(cur_tod), 0))
+	_tod_opt.item_selected.connect(func(i: int) -> void:
+		session.set_time_of_day(EventConfig.TIMES_OF_DAY[i]))
+	teams.add_child(_tod_opt)
 	teams.add_child(Kit.label(str(session.config.get("player_name", "PLAYER")), "SectionLabel"))
 	teams.add_child(Kit.label("OFFLINE EVENT" if session.is_event else "FREE FLIGHT", "DimLabel"))
 	var roster_box := Kit.panel(columns, "PILOT ROSTER")
@@ -90,6 +98,10 @@ func refresh() -> void:
 	for i in _team_buttons.size():
 		_team_buttons[i].set_pressed_no_signal(_session.player_team() == ("blue" if i == 0 else "red"))
 		_team_buttons[i].disabled = _session.team_locked
+	if _tod_opt != null:
+		var tod_idx := maxi(EventConfig.TIMES_OF_DAY.find(str(_session.config.get("time_of_day", "STATIC")).to_upper()), 0)
+		if _tod_opt.selected != tod_idx:
+			_tod_opt.select(tod_idx)
 	_roster.refresh(_session.roster(), _session.player_team())
 	_resume.visible = _session.can_resume()
 	if Time.get_ticks_msec() / 1000.0 > _confirm_until:

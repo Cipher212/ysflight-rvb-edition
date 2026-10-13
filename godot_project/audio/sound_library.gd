@@ -29,6 +29,11 @@ var extendldg: AudioStreamWAV
 var damage: AudioStreamWAV
 var hit: AudioStreamWAV
 var over_g: AudioStreamWAV
+var g_breath: AudioStreamWAV
+var runway_roll: AudioStreamWAV
+var cockpit_clunk: AudioStreamWAV
+var stall_buffet: AudioStreamWAV
+var sonic_boom: AudioStreamWAV
 
 func _init() -> void:
 	_load_all_sounds()
@@ -74,6 +79,14 @@ func _load_all_sounds() -> void:
 	extendldg = _load_sound("extendldg.wav")
 	damage = _load_sound("damage.wav")
 	hit = _load_sound("hit.wav")
+	g_breath = _load_sound("g_breath.wav", true)
+	if g_breath != null:
+		g_breath.loop_begin = 65539
+		g_breath.loop_end = 283112
+	runway_roll = _load_sound("runway_roll.wav", true)
+	cockpit_clunk = _load_sound("cockpit_clunk.wav")
+	stall_buffet = _load_sound("stall_buffet.wav", true)
+	sonic_boom = _load_sound("sonic_boom.wav")
 
 func _load_warning_sounds() -> void:
 	enemy_locked = _load_sound("locked.wav")

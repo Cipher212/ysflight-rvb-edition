@@ -112,11 +112,12 @@ func _run() -> void:
 	var sounds = _mgr._sounds
 	_assert(sounds.engine_bands.size() == 10, "all ten engine bands loaded")
 	for stream in sounds.engine_bands + [sounds.burner, sounds.cockpit_drone, sounds.stallhorn,
-		sounds.incoming, sounds.incoming_near, sounds.lock_on]:
+		sounds.incoming, sounds.incoming_near, sounds.lock_on, sounds.g_breath, sounds.runway_roll, sounds.stall_buffet]:
 		_assert(stream != null and not stream.stereo and stream.mix_rate == 44100
 			and stream.loop_mode == AudioStreamWAV.LOOP_FORWARD, "loop format and flags")
 	for stream in [sounds.bang, sounds.blast, sounds.bomb_blast, sounds.bomb_water,
-		sounds.enemy_locked, sounds.missile_lost, sounds.retractldg, sounds.extendldg]:
+		sounds.enemy_locked, sounds.missile_lost, sounds.retractldg, sounds.extendldg,
+		sounds.cockpit_clunk, sounds.touchdwn, sounds.sonic_boom]:
 		_assert(stream != null and stream.loop_mode == AudioStreamWAV.LOOP_DISABLED, "one-shot never loops")
 	_assert(sounds.bomb_water.data != sounds.bomb_blast.data, "water uses filtered source")
 	_assert(sounds.incoming_near.get_length() < 6.5 and sounds.missile_lost.get_length() == 2.0,
@@ -314,6 +315,63 @@ func _run() -> void:
 	playback = lock_player.get_stream_playback()
 	_tick()
 	_assert(lock_player.get_stream_playback() != playback, "ground/air lock identities distinct")
+	# High-G breathing, runway roll rumble, mechanical clunks, and touchdown chirp
+	_telemetry.g_force = 8.5
+	_tick(true)
+	_assert(_mgr._warnings.g_breath_player.playing and _mgr._warnings.g_breath_player.stream == sounds.g_breath,
+		"high-G pull triggers pilot oxygen-mask breathing")
+	_telemetry.g_force = 1.0
+	_tick(true, 110)
+	_assert(not _mgr._warnings.g_breath_player.playing, "unloading stops high-G breath after recovery hold")
+
+	_telemetry.gear = 1.0
+	_telemetry.agl_m = 2.0
+	_telemetry.speed_ms = 45.0
+	_telemetry.vsi_fpm = 0.0
+	_tick(true, 5)
+	_assert(_mgr._roll_player.playing and _mgr._roll_player.stream == sounds.runway_roll,
+		"ground roll activates runway rumble")
+	_telemetry.agl_m = 50.0
+	_tick(true, 15)
+	_assert(not _mgr._roll_player.playing, "liftoff stops runway rumble")
+
+	_clear_events()
+	_telemetry.flaps = 0.0
+	_telemetry.spoiler = 0.0
+	_tick(true)
+	_telemetry.flaps = 0.5
+	_tick(true)
+	_assert(_playing_streams().has(sounds.cockpit_clunk), "flap actuation plays mechanical clunk")
+
+	var td_signals := [0]
+	_mgr.player_touched_down.connect(func(): td_signals[0] += 1)
+	_clear_events()
+	_sim.onetime_data = PackedInt32Array([5])
+	_tick(true)
+	_assert(_playing_streams().has(sounds.touchdwn) and td_signals[0] == 1, "native touchdown plays chirp and emits signal")
+
+	# High-AoA wing stall buffet and supersonic flyby sonic boom
+	_telemetry.aoa_deg = 18.0
+	_telemetry.speed_ms = 180.0
+	_tick(true, 10)
+	_assert(_mgr._warnings.buffet_player.playing and _mgr._warnings.buffet_player.stream == sounds.stall_buffet,
+		"high AoA activates subtle wing stall buffet")
+	_telemetry.aoa_deg = 2.0
+	_tick(true, 15)
+	_assert(not _mgr._warnings.buffet_player.playing, "low AoA stops wing stall buffet")
+
+	_clear_events()
+	_cam.global_position = Vector3(0, 500, 0)
+	_sim.set_aircraft_list([
+		{"key": 20, "pos": Vector3(0, 500, 300), "vel": Vector3(0, 0, -420)}
+	])
+	_tick(false)
+	_sim.set_aircraft_list([
+		{"key": 20, "pos": Vector3(0, 500, -300), "vel": Vector3(0, 0, -420)}
+	])
+	_tick(false)
+	_assert(_playing_streams().has(sounds.sonic_boom), "supersonic flyby triggers DCS sonic boom")
+
 	var controls := FakeControls.new()
 	root.add_child(controls)
 	var volume := AudioVolumeScript.new()
@@ -329,7 +387,7 @@ func _run() -> void:
 	for i in range(100):
 		_tick(i % 2 == 0)
 	_assert(_mgr.get_child_count() == nodes and AudioServer.bus_count == buses, "rapid toggles never grow players/buses")
-	_assert(nodes == 51, "fixed 51-player total")
+	_assert(nodes == 54, "fixed 54-player total")
 	_sim.set_aircraft_list([])
 	_tick(false, 30)
 	for v in [pv] + voices._other_engine_voices:

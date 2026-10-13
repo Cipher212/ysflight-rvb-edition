@@ -20,11 +20,15 @@ var _camera: Camera3D = null
 var _initial_telemetry: Dictionary = {}
 var _prewarm: MeshInstance3D = null
 var _prewarm_left := 0
+var _radar_scope: Control = null
+var _sim: Node = null
 
 func setup(controls: Node, camera: Camera3D, telemetry: Dictionary) -> void:
 	_controls = controls
 	_camera = camera
 	_initial_telemetry = telemetry
+	if _controls != null and "ysflight_sim" in _controls:
+		_sim = _controls.ysflight_sim
 	_geometry = JSON.parse_string(FileAccess.get_file_as_string(GEOMETRY_PATH))
 	_controls.changed.connect(_on_setting_changed)
 	_on_setting_changed("cockpit_mfd")
@@ -69,13 +73,23 @@ func update_display(delta: float, player_tfm: Transform3D, tel: Dictionary, play
 	_remaining = REFRESH_SECONDS
 	_lock = locked
 	_missile = missile
-	
-	var target = airplanes.get(int(tel.get("locked_air_target_key", -1)), {})
+
+	var target: Dictionary = airplanes.get(int(tel.get("locked_air_target_key", -1)), {})
 	if target.is_empty():
 		target = grounds.get(int(tel.get("locked_ground_target_key", -1)), {})
-		
-	if _canvas.set_telemetry(tel, player_tfm, target) or not was_visible:
+
+	if _radar_scope == null and get_parent() != null:
+		_radar_scope = get_parent().get_node_or_null("HUDLayer/RadarScope")
+	if _sim == null and _controls != null and "ysflight_sim" in _controls:
+		_sim = _controls.ysflight_sim
+
+	var radar_data: Dictionary = _radar_scope._radar_data if _radar_scope != null else {}
+	var filter_mode: int = int(_radar_scope.filter_mode) if _radar_scope != null else 0
+	var towers: PackedVector3Array = _sim.get_tower_positions() if (_sim != null and _sim.has_method("get_tower_positions")) else PackedVector3Array()
+
+	if _canvas.set_telemetry(tel, player_tfm, target, radar_data, filter_mode, towers) or not was_visible:
 		_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+
 
 func _create_display() -> void:
 	_viewport = SubViewport.new()

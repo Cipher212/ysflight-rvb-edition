@@ -96,6 +96,10 @@ func set_draw_distance(draw_distance_m: float) -> void:
 	_base_fog_end = draw_distance_m * FOG_END_FRACTION
 	_compose_fog()
 
+# Called by graphics_settings.gd when Colour Style changes.
+func set_colour_style(style: String) -> void:
+	ColorGrade.apply(_env, style)
+
 # Temporary cloud immersion weighting (0.0 = clear air, 1.0 = deep inside cloud).
 func set_cloud_immersion(weight: float) -> void:
 	var clamped: float = clampf(weight, 0.0, 1.0)

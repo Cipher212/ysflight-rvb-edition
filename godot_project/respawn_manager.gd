@@ -3,10 +3,10 @@ extends Node
 # ui/preflight_flow.gd)
 # - Automatic respawn: RESPAWN_DELAY seconds after the player dies, a new aircraft of the selected type is
 #   placed at a start position (.stp) of the selected team: "Random" picks any [IFF1]/[IFF4] start of that
-#   team, skipping "(HELI ONLY)" spots for fixed-wing aircraft. Disabled in benchmark mode so benchmark
+#   team, skipping HELI / VTOL spots unless the aircraft is a helicopter or VTOL (sim.start_allows_aircraft). Disabled in benchmark mode so benchmark
 #   runs stay comparable with older baselines.
 # - F10 opens the flight-setup panel (aircraft, team, start position, respawn now), RvB style (ui/ui_kit.gd).
-#   C++ calls: get_airplane_template_names(), get_start_position_names(), is_helicopter_template(),
+#   C++ calls: get_airplane_template_names(), get_start_position_names(), start_allows_aircraft(),
 #   respawn_player().
 # Notes: logs/phase6_gameplay_log.md
 
@@ -76,12 +76,9 @@ func respawn() -> bool:
 
 func _pick_start_position(iff: int) -> String:
 	var tag: String = "[IFF%d]" % (iff + 1)
-	var heli: bool = sim.is_helicopter_template(selected_aircraft)
 	var candidates: PackedStringArray = PackedStringArray()
 	for n in sim.get_start_position_names():
-		if not n.begins_with(tag):
-			continue
-		if n.contains("HELI") and not heli:
+		if not n.begins_with(tag) or not sim.start_allows_aircraft(n, selected_aircraft):
 			continue
 		candidates.append(n)
 	if selected_start != "Random" and candidates.has(selected_start):
@@ -179,11 +176,10 @@ func _on_aircraft_selected(i: int) -> void:
 
 func _refresh_start_options() -> void:
 	var tag: String = "[IFF%d]" % (int(TEAMS[selected_team]["iff"]) + 1)
-	var heli: bool = sim.is_helicopter_template(selected_aircraft)
 	_start_opt.clear()
 	_start_opt.add_item("RANDOM")
 	for n in sim.get_start_position_names():
-		if n.begins_with(tag) and (heli or not n.contains("HELI")):
+		if n.begins_with(tag) and sim.start_allows_aircraft(n, selected_aircraft):
 			_start_opt.add_item(n)
 	selected_start = "Random"
 	_start_opt.select(0)

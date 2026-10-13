@@ -1,7 +1,7 @@
 extends Control
 
 # F-16 HUD symbology mapped to the HUD glass screen area from f16hud.srf.
-const GREEN := Color(0.25, 1.0, 0.3)
+const GREEN := Color(0.25, 1.0, 0.3, 0.82)
 const WIDTH := 1.0
 const M_TO_NM := 1.0 / 1852.0
 var hud: Control
@@ -41,10 +41,11 @@ func _flight() -> void:
 	var hc: Vector2 = hud.hud_center
 	var hs: Vector2 = hud.hud_size
 	
-	# 1. Top: Compass Tape across the very top of the combiner glass
+	# 1. Top: Compass Tape positioned comfortably below the upper glass arch
 	var hdg: float = float(tel.get("heading_deg", 0.0))
-	var top_y: float = hud.screen_pos(0.5, 0.08).y
-	_text_screen(Vector2(hc.x, top_y - 4.0), "%03d" % (int(round(hdg)) % 360), true, 1.1)
+	var top_y: float = hud.screen_pos(0.5, 0.13).y
+	var bottom_y: float = hud.screen_pos(0.5, 0.94).y
+	_text_screen(Vector2(hc.x, top_y - 4.0 * _scale), "%03d" % (int(round(hdg)) % 360), true, 1.1)
 	
 	var px_per_hdg: float = hs.x * 0.065
 	for offset in range(-4, 5):
@@ -59,17 +60,17 @@ func _flight() -> void:
 
 	# 2. Left Flight Data: Airspeed, Mach, G
 	var lx: float = hud.screen_pos(0.14, 0.0).x
-	_text_screen(Vector2(lx, hud.screen_pos(0.0, 0.35).y), "%03d" % int(round(float(tel.get("ias_kt", 0.0)))), false, 1.1)
-	_text_screen(Vector2(lx, hud.screen_pos(0.0, 0.43).y), "IAS", false, 0.9)
-	_text_screen(Vector2(lx, hud.screen_pos(0.0, 0.60).y), "M%.2f" % float(tel.get("mach", 0.0)), false, 0.95)
-	_text_screen(Vector2(lx, hud.screen_pos(0.0, 0.69).y), "%+.1fG" % float(tel.get("g_force", 1.0)), false, 0.95)
+	_text_screen(Vector2(lx, hud.screen_pos(0.0, 0.32).y), "%03d" % int(round(float(tel.get("ias_kt", 0.0)))), false, 1.1)
+	_text_screen(Vector2(lx, hud.screen_pos(0.0, 0.39).y), "IAS", false, 0.9)
+	_text_screen(Vector2(lx, hud.screen_pos(0.0, 0.54).y), "M%.2f" % float(tel.get("mach", 0.0)), false, 0.95)
+	_text_screen(Vector2(lx, hud.screen_pos(0.0, 0.62).y), "%+.1fG" % float(tel.get("g_force", 1.0)), false, 0.95)
 
 	# 3. Right Flight Data: Altitude, AGL, VSI
 	var rx: float = hud.screen_pos(0.86, 0.0).x
-	_text_screen(Vector2(rx - 25.0 * _scale, hud.screen_pos(0.0, 0.35).y), "%d" % int(round(float(tel.get("altitude_ft", 0.0)))), false, 1.1)
-	_text_screen(Vector2(rx - 15.0 * _scale, hud.screen_pos(0.0, 0.43).y), "FT", false, 0.9)
-	_text_screen(Vector2(rx - 30.0 * _scale, hud.screen_pos(0.0, 0.60).y), "R%d" % int(round(float(tel.get("agl_m", 0.0)) * 3.28084)), false, 0.95)
-	_text_screen(Vector2(rx - 30.0 * _scale, hud.screen_pos(0.0, 0.69).y), "%+.0f" % float(tel.get("vsi_fpm", 0.0)), false, 0.95)
+	_text_screen(Vector2(rx - 25.0 * _scale, hud.screen_pos(0.0, 0.32).y), "%d" % int(round(float(tel.get("altitude_ft", 0.0)))), false, 1.1)
+	_text_screen(Vector2(rx - 15.0 * _scale, hud.screen_pos(0.0, 0.39).y), "FT", false, 0.9)
+	_text_screen(Vector2(rx - 30.0 * _scale, hud.screen_pos(0.0, 0.54).y), "R%d" % int(round(float(tel.get("agl_m", 0.0)) * 3.28084)), false, 0.95)
+	_text_screen(Vector2(rx - 30.0 * _scale, hud.screen_pos(0.0, 0.62).y), "%+.0f" % float(tel.get("vsi_fpm", 0.0)), false, 0.95)
 
 	# 4. Center: Boresight Reference Cross (Waterline)
 	var b_sp: Vector2 = hud.project_direction(-hud.aircraft.basis.z)
@@ -121,9 +122,11 @@ func _flight() -> void:
 			_line(draw_fpm_p - Vector2(cx, cx), draw_fpm_p + Vector2(cx, cx))
 			_line(draw_fpm_p + Vector2(-cx, cx), draw_fpm_p + Vector2(cx, -cx))
 
-	# 6. Pitch Ladder (Conformal to World Horizon, roll/pitch stabilized on aircraft centerline)
+	# 6. Pitch Ladder (Conformal to World Horizon, windowed between compass tape and bottom status)
 	var focal_len: float = hud.focal_length()
 	var ladder_center: Vector2 = b_sp if b_sp.x > -50000.0 else hud.optical_center()
+	var ladder_min_y: float = top_y + 14.0 * _scale
+	var ladder_max_y: float = bottom_y - 26.0 * _scale
 
 	var start := int(floor(cam_pitch_deg / 5.0)) * 5
 	for pitch in range(start - 15, start + 16, 5):
@@ -132,6 +135,8 @@ func _flight() -> void:
 		if absf(delta_p) > 20.0: continue
 		var d_px: float = focal_len * tan(deg_to_rad(delta_p))
 		var rung_ctr: Vector2 = ladder_center + ladder_up * d_px
+		if rung_ctr.y < ladder_min_y or rung_ctr.y > ladder_max_y:
+			continue
 		
 		for side: float in [-1.0, 1.0]:
 			var arm_len: float = (35.0 if pitch == 0 else 20.0) * _scale
@@ -152,25 +157,59 @@ func _flight() -> void:
 				_text_screen(p_outer + ladder_right * (7.0 * side * _scale) - ladder_up * 3.0, str(absi(pitch)), true, 0.8)
 
 
+func _dashed_circle(p: Vector2, r: float, segments: int = 12) -> void:
+	if not Geometry2D.is_point_in_polygon(p, hud.aperture): return
+	var step := TAU / float(segments)
+	for i in range(segments):
+		var a0 := float(i) * step
+		draw_arc(p, r * _scale, a0, a0 + step * 0.55, 3, GREEN, maxf(1.0, WIDTH * _scale), true)
+
 func _weapons() -> void:
 	var tel: Dictionary = hud.telemetry
+	var wtype := int(tel.get("weapon_type", -1))
 	var weapon := str(tel.get("weapon_name", "NONE"))
 	var count := int(tel.get("ammo_count", 0))
+	var gun_ammo := int(tel.get("gun_ammo", 0))
+	var flares := int(tel.get("flare_count", 0))
 	var hc: Vector2 = hud.hud_center
-	var bottom_y: float = hud.screen_pos(0.5, 0.90).y
-	
-	_text_screen(Vector2(hc.x, bottom_y), "%s %d" % [weapon, count], true, 1.05)
-	
-	var warning := "MISSILE" if bool(tel.get("is_missile_chasing", false)) else \
-		("LOCK" if bool(tel.get("is_locked_by_enemy", false)) else "")
-	if warning.is_empty() and float(tel.get("fuel_pct", 100.0)) < 15.0:
-		warning = "FUEL LOW"
-	if not warning.is_empty():
-		_text_screen(Vector2(hc.x, bottom_y - 16.0 * _scale), warning, true, 1.1)
+	var bottom_y: float = hud.screen_pos(0.5, 0.97).y
 
-	# Target Box / Steering Arrow
-	if not hud.target.is_empty() and bool(hud.target.get("is_alive", true)):
+	# Bottom weapon bar: Always-on Gun (left), Selected Weapon (center), Flares (right)
+	_text_screen(Vector2(hud.screen_pos(0.24, 0.97).x, bottom_y), "G:%d" % gun_ammo, true, 0.9)
+	_text_screen(Vector2(hc.x, bottom_y), "%s %d" % [weapon, count], true, 1.05)
+	_text_screen(Vector2(hud.screen_pos(0.76, 0.97).x, bottom_y), "F:%d" % flares, true, 0.9)
+
+	var missile_chasing := bool(tel.get("is_missile_chasing", false))
+	var locked_by_enemy := bool(tel.get("is_locked_by_enemy", false))
+	var warning := ""
+	if missile_chasing:
+		var flash_on := (int(Time.get_ticks_msec() / 100) % 2) == 0
+		warning = "!! MISSILE !!" if flash_on else "MISSILE"
+	elif locked_by_enemy:
+		warning = "SPIKE / LOCK"
+	elif float(tel.get("fuel_pct", 100.0)) <= 15.0:
+		warning = "BINGO FUEL"
+	if not warning.is_empty():
+		_text_screen(Vector2(hc.x, bottom_y - 14.0 * _scale), warning, true, 1.05)
+
+	var has_target: bool = not hud.target.is_empty() and bool(hud.target.get("is_alive", true))
+	var range_limit: float = float(tel.get("agm_range", 0.0)) if wtype == 2 else float(tel.get("aam_range", 0.0))
+
+	# Un-locked Missile Seeker Acquisition Circle around boresight
+	if not has_target and wtype in [1, 2, 6, 10] and count > 0:
+		var b_sp: Vector2 = hud.project_direction(-hud.aircraft.basis.z)
+		if b_sp.x > -50000.0:
+			_dashed_circle(b_sp, 24.0 if wtype == 6 else 18.0, 12)
+
+	# Target Box, Steering Arrow & Dynamic Launch Zone (DLZ) Scale
+	if has_target:
 		var pos: Vector3 = hud.target.get("pos", Vector3.ZERO)
+		var distance: float = hud.aircraft.origin.distance_to(pos)
+		var in_wez: bool = range_limit > 0.0 and count > 0 and distance <= range_limit
+
+		if range_limit > 0.0:
+			_draw_dlz(distance, range_limit, in_wez)
+
 		if not hud.camera.is_position_behind(pos):
 			var p: Vector2 = hud.camera.unproject_position(pos)
 			if not Geometry2D.is_point_in_polygon(p, hud.aperture):
@@ -180,24 +219,54 @@ func _weapons() -> void:
 				_line(arrow - direction * 5.0 * _scale, arrow + direction * 5.0 * _scale)
 				_line(arrow + direction * 5.0 * _scale, arrow + (-direction * 1.0 + side * 4.0) * _scale)
 				_line(arrow + direction * 5.0 * _scale, arrow + (-direction * 1.0 - side * 4.0) * _scale)
+				_text_screen(arrow + Vector2(0.0, 12.0 * _scale), "%.1fNM" % (distance * M_TO_NM), true, 0.8)
 			else:
 				var radius := 8.0 * _scale
 				draw_rect(Rect2(p - Vector2.ONE * radius, Vector2.ONE * radius * 2.0), GREEN, false, maxf(1.0, WIDTH * _scale))
-				var distance: float = hud.aircraft.origin.distance_to(pos)
-				var range_limit := float(tel.get("agm_range", 0.0)) if int(tel.get("weapon_type", 0)) == 2 else float(tel.get("aam_range", 0.0))
-				if range_limit > 0.0 and count > 0 and distance < range_limit:
+				if in_wez:
 					_circle(p, 5.5)
+					_text_screen(p - Vector2(0.0, radius + 5.0 * _scale), "SHOOT", true, 0.9)
 				_text_screen(p + Vector2(0, radius + 10.0 * _scale), "%.1fNM" % (distance * M_TO_NM), true, 0.85)
 		else:
-			_text_screen(Vector2(hc.x, bottom_y - 28.0 * _scale), "TGT AFT", true, 0.9)
+			_text_screen(Vector2(hc.x, bottom_y - 26.0 * _scale), "TGT AFT %.1fNM" % (distance * M_TO_NM), true, 0.9)
 
 	# Gun Pipper (Classic lead reticle matching default HUD)
-	if int(tel.get("weapon_type", -1)) == 0 and bool(tel.get("has_gun_lead", false)):
+	if wtype == 0 and bool(tel.get("has_gun_lead", false)):
 		_gun_pipper(tel.get("gun_lead_pos", Vector3.ZERO))
 
 	# Bombsight Pipper (YSCE Ballistics reticle matching default HUD)
 	if bool(tel.get("cockpit_bomb_impact_valid", false)):
 		_bomb_pipper(tel.get("cockpit_bomb_impact_pos", Vector3.ZERO))
+
+func _draw_dlz(distance: float, range_limit: float, in_wez: bool) -> void:
+	# DLZ (Dynamic Launch Zone) vertical scale on inner-right side of the combiner glass
+	var dlz_x: float = hud.screen_pos(0.69, 0.0).x
+	var y_top: float = hud.screen_pos(0.0, 0.40).y
+	var y_bot: float = hud.screen_pos(0.0, 0.56).y
+	if not Geometry2D.is_point_in_polygon(Vector2(dlz_x, (y_top + y_bot) * 0.5), hud.aperture):
+		return
+	var h: float = y_bot - y_top
+	var tick_w: float = 5.0 * _scale
+
+	# Main vertical scale bar (0 to 1.25 * Rmax, with Rmax at 80% height and NEZ at 40% height)
+	var y_rmax: float = y_bot - h * 0.80
+	var y_nez: float = y_bot - h * 0.40
+	_line(Vector2(dlz_x, y_top), Vector2(dlz_x, y_bot))
+	_line(Vector2(dlz_x - tick_w, y_rmax), Vector2(dlz_x, y_rmax))
+	_line(Vector2(dlz_x - tick_w, y_bot), Vector2(dlz_x, y_bot))
+	# No-Escape Zone (NEZ) bracket
+	_line(Vector2(dlz_x - tick_w * 0.7, y_nez), Vector2(dlz_x, y_nez))
+	_line(Vector2(dlz_x - tick_w * 0.7, y_nez), Vector2(dlz_x - tick_w * 0.7, y_bot))
+
+	# Target range caret (<) sliding along DLZ
+	var frac: float = clampf(distance / (range_limit * 1.25), 0.0, 1.0)
+	var caret_y: float = y_bot - h * frac
+	var cw: float = 5.5 * _scale
+	_line(Vector2(dlz_x + 1.0 * _scale, caret_y), Vector2(dlz_x + cw, caret_y - 3.5 * _scale))
+	_line(Vector2(dlz_x + 1.0 * _scale, caret_y), Vector2(dlz_x + cw, caret_y + 3.5 * _scale))
+	if in_wez:
+		_text_screen(Vector2(dlz_x, y_bot + 10.0 * _scale), "IN RNG", true, 0.75)
+
 
 func _gun_pipper(pos: Vector3) -> void:
 	if hud.camera.is_position_behind(pos): return

@@ -20,3 +20,8 @@ godot_project/.godot/
 __pycache__/
 *.pyc
 *.lnk
+
+# Godot-side runtime logs and dated scenery backups (rollback copies stay local)
+godot_project/crashlog/
+godot_project/user/**/*.fld.bak
+godot_project/user/**/*.stp.bak

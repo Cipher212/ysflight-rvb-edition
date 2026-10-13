@@ -6,23 +6,37 @@ const GUN_MAX_DISTANCE: float = 5000.0
 const LAUNCH_UNIT_SIZE: float = 300.0
 const LAUNCH_MAX_DISTANCE: float = 6000.0
 const PLAYER_EVENT_UNIT_SIZE: float = 40.0
+const RUNWAY_ROLL_DB: float = -6.0
 const SoundLibrary := preload("res://audio/sound_library.gd")
 const AudioBuses := preload("res://audio/audio_buses.gd")
 const EngineAudio := preload("res://audio/engine_audio.gd")
 const ImpactAudio := preload("res://audio/impact_audio.gd")
 const WarningAudio := preload("res://audio/warning_audio.gd")
+const SonicBoom := preload("res://audio/sonic_boom.gd")
+
+signal player_touched_down
 
 var _sounds: SoundLibrary
 var _buses: AudioBuses
 var _engines: EngineAudio
 var _impacts: ImpactAudio
 var _warnings: WarningAudio
+var _sonic_boom: SonicBoom
 var _sim: Object
 var _ac_key_to_row: Dictionary = {}
 var _oneshot_players: Array[AudioStreamPlayer3D] = []
 var _oneshot_start_times: PackedFloat64Array = []
 var _prev_cam_pos := Vector3.ZERO
 var _has_prev_cam := false
+
+var _roll_player: AudioStreamPlayer = null
+var _roll_gain: float = 0.0
+var _clunk_player_key: int = -1
+var _prev_flaps: float = -1.0
+var _prev_spoiler: float = -1.0
+var _flaps_moving: bool = false
+var _spoiler_moving: bool = false
+var _clunk_cooldown: float = 0.0
 
 # Gun voice structure
 class GunVoice:
@@ -49,6 +63,13 @@ func setup(sim: Object) -> void:
 	_impacts.setup(_sounds)
 	_warnings = WarningAudio.new()
 	_warnings.setup(self, _sounds)
+	_sonic_boom = SonicBoom.new()
+	_roll_player = AudioStreamPlayer.new()
+	_roll_player.name = "RunwayRoll"
+	_roll_player.bus = "Effects"
+	_roll_player.stream = _sounds.runway_roll
+	_roll_player.volume_db = -80.0
+	add_child(_roll_player)
 	_setup_gun_voices()
 	_setup_oneshots()
 	var is_bench := "--benchmark" in OS.get_cmdline_user_args()
@@ -89,6 +110,10 @@ func update(delta: float, camera: Camera3D, interior: bool, telemetry: Dictionar
 	_engines.update(delta, cam_pos, listener_vel, aircraft, _ac_key_to_row, player_key if alive else -1, interior)
 	_update_gun_voices(delta, cam_pos, listener_vel, aircraft, alive, player_key, player_pos)
 	_process_one_shots(cam_pos, state, player_pos, alive, player_key)
+	if _sonic_boom != null and _sounds.sonic_boom != null:
+		_sonic_boom.update(delta, cam_pos, interior, player_key if alive else -1, aircraft, _play_oneshot, _sounds.sonic_boom)
+	_update_runway_roll(delta, alive, telemetry)
+	_update_cockpit_clunks(delta, player_pos, alive, player_key, telemetry)
 	_warnings.update(delta, player, telemetry, alive, float(state.get("nearest_incoming_missile_m", -1.0)),
 		int(state.get("incoming_missiles_lost", 0)))
 
@@ -344,8 +369,76 @@ func _process_one_shots(cam_pos: Vector3, state: Dictionary, player_pos: Vector3
 			if ev in [1, 6] and _impacts.player_was_hit(state, player_key):
 				continue
 			match ev:
-				5: _play_oneshot(_sounds.touchdwn, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+				5:
+					_play_oneshot(_sounds.touchdwn, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+					player_touched_down.emit()
 				8: _play_oneshot(_sounds.retractldg, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
 				9: _play_oneshot(_sounds.extendldg, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
 				1: _play_oneshot(_sounds.damage, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
 				6: _play_oneshot(_sounds.hit, player_pos, 0.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+
+func _update_runway_roll(delta: float, player_alive: bool, telemetry: Dictionary) -> void:
+	if _roll_player == null or _sounds.runway_roll == null:
+		return
+	if not player_alive:
+		if _roll_player.playing:
+			_roll_player.stop()
+		_roll_gain = 0.0
+		return
+	var agl: float = float(telemetry.get("agl_m", 100.0))
+	var gear: float = float(telemetry.get("gear", 0.0))
+	var speed_ms: float = float(telemetry.get("speed_ms", 0.0))
+	var vsi_fpm: float = float(telemetry.get("vsi_fpm", 0.0))
+	var rolling := gear >= 0.85 and agl <= 3.8 and absf(vsi_fpm) <= 500.0 and speed_ms >= 1.5
+	var target_gain := 0.0
+	if rolling:
+		var t := clampf((speed_ms - 1.5) / 75.0, 0.0, 1.0)
+		_roll_player.pitch_scale = lerpf(0.72, 1.25, t)
+		target_gain = clampf((speed_ms - 1.5) / 10.0, 0.0, 1.0) * lerpf(0.35, 1.0, sqrt(t))
+	_roll_gain = move_toward(_roll_gain, target_gain, delta / 0.12)
+	if _roll_gain > 0.001:
+		_roll_player.volume_db = linear_to_db(_roll_gain * db_to_linear(RUNWAY_ROLL_DB))
+		if not _roll_player.playing:
+			_roll_player.play()
+	elif _roll_player.playing:
+		_roll_player.stop()
+
+func _update_cockpit_clunks(delta: float, player_pos: Vector3, alive: bool, player_key: int, telemetry: Dictionary) -> void:
+	if not alive or player_key < 0:
+		_clunk_player_key = -1
+		_prev_flaps = -1.0
+		_prev_spoiler = -1.0
+		_flaps_moving = false
+		_spoiler_moving = false
+		return
+	var flaps: float = float(telemetry.get("flaps", 0.0))
+	var spoiler: float = float(telemetry.get("spoiler", 0.0))
+	if player_key != _clunk_player_key:
+		_clunk_player_key = player_key
+		_prev_flaps = flaps
+		_prev_spoiler = spoiler
+		_flaps_moving = false
+		_spoiler_moving = false
+		return
+	if _clunk_cooldown > 0.0:
+		_clunk_cooldown = maxf(0.0, _clunk_cooldown - delta)
+	var flap_delta := absf(flaps - _prev_flaps)
+	if flap_delta > 0.003 and not _flaps_moving:
+		_flaps_moving = true
+		if _clunk_cooldown <= 0.0:
+			_play_oneshot(_sounds.cockpit_clunk, player_pos, -2.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+			_clunk_cooldown = 0.20
+	elif flap_delta <= 0.0005:
+		_flaps_moving = false
+
+	var spoiler_delta := absf(spoiler - _prev_spoiler)
+	if spoiler_delta > 0.003 and not _spoiler_moving:
+		_spoiler_moving = true
+		if _clunk_cooldown <= 0.0:
+			_play_oneshot(_sounds.cockpit_clunk, player_pos, -2.0, PLAYER_EVENT_UNIT_SIZE, LAUNCH_MAX_DISTANCE)
+			_clunk_cooldown = 0.20
+	elif spoiler_delta <= 0.0005:
+		_spoiler_moving = false
+
+	_prev_flaps = flaps
+	_prev_spoiler = spoiler
